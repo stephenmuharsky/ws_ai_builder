@@ -1,0 +1,269 @@
+{
+  "name": "WF5 - Email Outreach & Booking",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF5: EMAIL OUTREACH & BOOKING\n\n**Trigger:** Called by WF4 when admin approves a lead\n\n**PATH A — Time available:** Send confirmation email + create calendar event + log appointment. Done.\n**PATH B — Scheduling required:** Find available slots, send outreach email with options, wait for reply (handled by WF6).\n\n**Adapts existing WhatsApp booking engine for email.**",
+        "height": 300,
+        "width": 500,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-600, -200],
+      "id": "sn-wf5-overview",
+      "name": "WF5 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": { "values": [{ "name": "leadId" }, { "name": "assignedAdvisorId" }, { "name": "availabilityStatus" }, { "name": "suggestedBooking" }] }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 200],
+      "id": "wf5-trigger",
+      "name": "Called from WF4"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 200],
+      "id": "get-lead-wf5",
+      "name": "Get Lead State",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:email_templates"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 400],
+      "id": "get-templates-wf5",
+      "name": "Get Templates",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:config"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 600],
+      "id": "get-config-wf5",
+      "name": "Get Config",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "avail-check", "leftValue": "={{ $('Called from WF4').first().json.availabilityStatus }}", "rightValue": "SCHEDULING_REQUIRED", "operator": { "type": "string", "operation": "notEquals" } }],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [320, 200],
+      "id": "time-available-check",
+      "name": "Time Available?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// PATH A: Build confirmation email\nconst lead = $('Get Lead State').first().json;\nconst input = $('Called from WF4').first().json;\nlet templatesRaw = $('Get Templates').first().json;\nlet configRaw = $('Get Config').first().json;\nconst templates = JSON.parse(typeof templatesRaw === 'string' ? templatesRaw : (templatesRaw.data || '{}'));\nconst config = JSON.parse(typeof configRaw === 'string' ? configRaw : (configRaw.data || '{}'));\n\nconst booking = typeof input.suggestedBooking === 'string' ? JSON.parse(input.suggestedBooking) : input.suggestedBooking;\nconst firstName = (lead.fullName || '').split(' ')[0];\nconst advisorName = lead.assignedAdvisorName || input.assignedAdvisorId;\n\n// Format datetime\nconst date = booking?.date || lead.preferredDate;\nconst time = booking?.time || lead.preferredTime;\nconst dateObj = new Date(`${date}T${time}:00`);\nconst formatted = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\nconst timeFormatted = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });\n\nconst tpl = templates.confirmation || { subject: 'Consultation confirmed', body: 'Your consultation is confirmed.' };\nlet subject = tpl.subject.replace(/\\{\\{advisor_name\\}\\}/g, advisorName).replace(/\\{\\{firm_name\\}\\}/g, config.firm_name || 'NorthStar Wealth Advisory');\nlet body = tpl.body\n  .replace(/\\{\\{first_name\\}\\}/g, firstName)\n  .replace(/\\{\\{advisor_name\\}\\}/g, advisorName)\n  .replace(/\\{\\{formatted_date\\}\\}/g, formatted)\n  .replace(/\\{\\{formatted_time\\}\\}/g, timeFormatted + ' EST')\n  .replace(/\\{\\{consultation_description\\}\\}/g, config.consultation_description || '')\n  .replace(/\\{\\{firm_name\\}\\}/g, config.firm_name || 'NorthStar Wealth Advisory');\n\n// Build ISO datetime for calendar\nconst startISO = `${date}T${time}:00`;\nconst duration = Number(config.consultation_duration_minutes) || 60;\nconst endDate = new Date(new Date(startISO).getTime() + duration * 60000);\n\nreturn [{ json: {\n  to: lead.email,\n  subject,\n  body,\n  leadId: lead.leadId || input.leadId,\n  advisorId: input.assignedAdvisorId,\n  advisorName,\n  advisorEmail: '', // Will be looked up\n  calStart: startISO,\n  calEnd: endDate.toISOString(),\n  clientName: lead.fullName,\n  profileSummary: lead.profileSummary || '',\n  conversationStarters: lead.conversationStarters || '[]'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 80],
+      "id": "build-confirmation",
+      "name": "Build Confirmation Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [880, 80],
+      "id": "send-confirmation",
+      "name": "Send Confirmation Email",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+    },
+    {
+      "parameters": {
+        "calendar": { "__rl": true, "value": "YOUR_GOOGLE_CALENDAR_ID", "mode": "id" },
+        "start": "={{ $('Build Confirmation Email').first().json.calStart }}",
+        "end": "={{ $('Build Confirmation Email').first().json.calEnd }}",
+        "additionalFields": {
+          "summary": "=Client Consultation — {{ $('Build Confirmation Email').first().json.clientName }}",
+          "description": "=Profile: {{ $('Build Confirmation Email').first().json.profileSummary }}\n\nTalking Points: {{ $('Build Confirmation Email').first().json.conversationStarters }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 3,
+      "position": [1160, 80],
+      "id": "create-cal-event",
+      "name": "Create Calendar Event",
+      "credentials": { "googleCalendarOAuth2Api": { "id": "YOUR_GCAL_CRED_ID", "name": "Google Calendar" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Appointments", "mode": "list" },
+        "columns": { "mappingMode": "defineBelow", "value": {
+          "leadId": "={{ $('Build Confirmation Email').first().json.leadId }}",
+          "clientName": "={{ $('Build Confirmation Email').first().json.clientName }}",
+          "clientEmail": "={{ $('Build Confirmation Email').first().json.to }}",
+          "advisorId": "={{ $('Build Confirmation Email').first().json.advisorId }}",
+          "advisorName": "={{ $('Build Confirmation Email').first().json.advisorName }}",
+          "datetime": "={{ $('Build Confirmation Email').first().json.calStart }}",
+          "status": "BOOKED",
+          "calendarEventId": "={{ $('Create Calendar Event').first().json.id || '' }}",
+          "createdAt": "={{ $now.toISO() }}"
+        } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1440, 80],
+      "id": "log-appointment",
+      "name": "Log Appointment",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Build Confirmation Email').first().json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'BOOKED', bookedAt: $now.toISO(), appointmentDatetime: $('Build Confirmation Email').first().json.calStart, calendarEventId: $('Create Calendar Event').first().json.id || '' }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1720, 80],
+      "id": "set-booked",
+      "name": "Set BOOKED in Redis",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $('Build Confirmation Email').first().json.leadId }}" }] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "BOOKED", "bookedAt": "={{ $now.toISO() }}", "appointmentDatetime": "={{ $('Build Confirmation Email').first().json.calStart }}" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2000, 80],
+      "id": "update-sheets-booked",
+      "name": "Update Leads (BOOKED)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// PATH B: Find available slots and build outreach email\nconst lead = $('Get Lead State').first().json;\nconst input = $('Called from WF4').first().json;\nlet configRaw = $('Get Config').first().json;\nconst config = JSON.parse(typeof configRaw === 'string' ? configRaw : (configRaw.data || '{}'));\nlet templatesRaw = $('Get Templates').first().json;\nconst templates = JSON.parse(typeof templatesRaw === 'string' ? templatesRaw : (templatesRaw.data || '{}'));\n\nconst firstName = (lead.fullName || '').split(' ')[0];\nconst advisorName = lead.assignedAdvisorName || 'our advisor';\nconst firmName = config.firm_name || 'NorthStar Wealth Advisory';\n\n// Generate sample available slots (in production, these come from availability check)\n// For now, offer 4 slots across next 5 business days\nconst now = new Date();\nconst slots = [];\nconst times = ['10:00', '11:00', '14:00', '15:00'];\nlet daysChecked = 0;\nlet d = new Date(now);\nwhile (slots.length < 4 && daysChecked < 10) {\n  d.setDate(d.getDate() + 1);\n  daysChecked++;\n  if (d.getDay() === 0 || d.getDay() === 6) continue; // Skip weekends\n  const dateStr = d.toISOString().split('T')[0];\n  const timeStr = times[slots.length % times.length];\n  const dt = new Date(`${dateStr}T${timeStr}:00`);\n  slots.push({\n    date: dateStr,\n    time: timeStr,\n    display: dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + ' at ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) + ' EST'\n  });\n}\n\nconst slotList = slots.map((s, i) => `${i + 1}. ${s.display}`).join('\\n');\n\nconst tpl = templates.scheduling_outreach || { subject: 'Let\\'s schedule your consultation', body: '' };\nlet subject = tpl.subject.replace(/\\{\\{firm_name\\}\\}/g, firmName);\n\nconst body = `Hi ${firstName},\\n\\nThank you for your interest in ${firmName}. We'd love to set up an initial consultation with ${advisorName}.\\n\\nUnfortunately, your preferred time wasn't available. Here are some times that work:\\n\\n${slotList}\\n\\nWould any of these work for you? Or feel free to suggest another time — just reply to this email.\\n\\nBest regards,\\n${firmName}`;\n\nreturn [{ json: {\n  to: lead.email,\n  subject,\n  body,\n  leadId: lead.leadId || input.leadId,\n  pendingSlots: JSON.stringify(slots)\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 360],
+      "id": "build-outreach",
+      "name": "Build Scheduling Outreach"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [880, 360],
+      "id": "send-outreach",
+      "name": "Send Outreach Email",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Build Scheduling Outreach').first().json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'OUTREACH_IN_PROGRESS', outreachSentAt: $now.toISO(), lastEmailSentAt: $now.toISO(), pendingSlots: $('Build Scheduling Outreach').first().json.pendingSlots }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1160, 360],
+      "id": "set-outreach",
+      "name": "Set OUTREACH_IN_PROGRESS",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $('Build Scheduling Outreach').first().json.leadId }}" }] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "OUTREACH_IN_PROGRESS", "lastEmailSentAt": "={{ $now.toISO() }}" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1440, 360],
+      "id": "update-sheets-outreach",
+      "name": "Update Leads (Outreach)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [600, 600],
+      "id": "wf5-error",
+      "name": "Catch WF5 Errors"
+    },
+    {
+      "parameters": { "sendTo": "admin@northstarwealth.ca", "subject": "⚠️ WF5 Outreach Error — NorthStar Pipeline", "message": "=Email outreach error: {{ JSON.stringify($json) }}", "options": {} },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [880, 600],
+      "id": "wf5-error-email",
+      "name": "Send WF5 Error Alert",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+    }
+  ],
+  "connections": {
+    "Called from WF4": { "main": [[{ "node": "Get Lead State", "type": "main", "index": 0 }, { "node": "Get Templates", "type": "main", "index": 0 }, { "node": "Get Config", "type": "main", "index": 0 }]] },
+    "Get Config": { "main": [[{ "node": "Time Available?", "type": "main", "index": 0 }]] },
+    "Time Available?": { "main": [
+      [{ "node": "Build Confirmation Email", "type": "main", "index": 0 }],
+      [{ "node": "Build Scheduling Outreach", "type": "main", "index": 0 }]
+    ]},
+    "Build Confirmation Email": { "main": [[{ "node": "Send Confirmation Email", "type": "main", "index": 0 }]] },
+    "Send Confirmation Email": { "main": [[{ "node": "Create Calendar Event", "type": "main", "index": 0 }]] },
+    "Create Calendar Event": { "main": [[{ "node": "Log Appointment", "type": "main", "index": 0 }]] },
+    "Log Appointment": { "main": [[{ "node": "Set BOOKED in Redis", "type": "main", "index": 0 }]] },
+    "Set BOOKED in Redis": { "main": [[{ "node": "Update Leads (BOOKED)", "type": "main", "index": 0 }]] },
+    "Build Scheduling Outreach": { "main": [[{ "node": "Send Outreach Email", "type": "main", "index": 0 }]] },
+    "Send Outreach Email": { "main": [[{ "node": "Set OUTREACH_IN_PROGRESS", "type": "main", "index": 0 }]] },
+    "Set OUTREACH_IN_PROGRESS": { "main": [[{ "node": "Update Leads (Outreach)", "type": "main", "index": 0 }]] },
+    "Catch WF5 Errors": { "main": [[{ "node": "Send WF5 Error Alert", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "wf5-outreach-v1",
+  "meta": { "instanceId": "northstar-pipeline" },
+  "id": "wf5-outreach",
+  "tags": [{ "name": "northstar" }, { "name": "outreach" }, { "name": "booking" }]
+}

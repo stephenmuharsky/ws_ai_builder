@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:/Users/smuha/desktop/wealthsimple ai builder project/client-)",
+      "Bash(cd \"C:/Users/smuha/desktop/wealthsimple ai builder project/admin-dashboard\" && npm install 2>&1)",
+      "Bash(cd \"C:/Users/smuha/desktop/wealthsimple ai builder project/client-intake-form\" && npm run build 2>&1)",
+      "Bash(cd \"C:/Users/smuha/desktop/wealthsimple ai builder project/admin-dashboard\" && npm run build 2>&1)"
+    ]
+  }
+}
