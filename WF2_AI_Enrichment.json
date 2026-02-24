@@ -1,0 +1,258 @@
+{
+  "name": "WF2 - AI Enrichment Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF2: AI ENRICHMENT PIPELINE\n\n**Trigger:** Called by WF1 after lead passes disqualification\n\n**Flow:**\n1. Load lead data from Redis\n2. Load business data (advisors, service tiers) from Redis cache\n3. AI Enrichment Agent generates structured profile:\n   - Client Profile Summary (3-4 sentences)\n   - Recommended Service Tier\n   - Advisor Match Ranking (all advisors scored)\n   - Conversation Starters (3 points)\n   - Risk Flags (from free text + form data)\n   - Priority Score (HIGH/MEDIUM/LOW)\n4. Save enrichment to Redis + Sheets\n5. Trigger WF3 - Availability Pre-Check\n\n**ONE AI call per lead. Structured output with Gemini 2.5 Flash.**",
+        "height": 500,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-600, -200],
+      "id": "sn-wf2-overview",
+      "name": "WF2 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [{ "name": "leadId" }]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 200],
+      "id": "wf2-trigger",
+      "name": "Called from WF1"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 200],
+      "id": "get-lead-state",
+      "name": "Get Lead State",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify status and set processing lock\nconst lead = $input.first().json;\nif (lead.status !== 'PENDING_ENRICHMENT') {\n  throw new Error(`Lead ${lead.leadId} status is ${lead.status}, expected PENDING_ENRICHMENT. Skipping duplicate.`);\n}\nreturn [{ json: { ...lead, status: 'ENRICHING' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 200],
+      "id": "verify-status",
+      "name": "Verify & Lock Status"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'ENRICHING' }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [520, 200],
+      "id": "set-enriching",
+      "name": "Set Status ENRICHING",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:advisors"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [760, 100],
+      "id": "get-advisors",
+      "name": "Get Advisors Cache",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:service_tiers"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [760, 300],
+      "id": "get-service-tiers",
+      "name": "Get Service Tiers Cache",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge lead data + business data for AI agent\nconst lead = $('Verify & Lock Status').first().json;\nlet advisorsRaw = $('Get Advisors Cache').first().json;\nlet tiersRaw = $('Get Service Tiers Cache').first().json;\n\n// Parse Redis values\nconst advisors = typeof advisorsRaw === 'string' ? JSON.parse(advisorsRaw) : (advisorsRaw.data ? JSON.parse(advisorsRaw.data) : advisorsRaw);\nconst tiers = typeof tiersRaw === 'string' ? JSON.parse(tiersRaw) : (tiersRaw.data ? JSON.parse(tiersRaw.data) : tiersRaw);\n\nreturn [{\n  json: {\n    leadData: lead,\n    advisors,\n    serviceTiers: tiers\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 200],
+      "id": "merge-data",
+      "name": "Merge Lead + Business Data"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a client intake enrichment agent for NorthStar Wealth Advisory, a financial advisory firm in Toronto, Canada. Analyze intake form data and generate a structured assessment. Output JSON only — no explanations, no markdown.\n\n## OUTPUT SCHEMA\n{\n  \"profileSummary\": \"3-4 sentence natural language synthesis of the client's financial situation, goals, and notable signals. Write as if briefing a senior advisor. Mention: asset level context, goal alignment, risk profile interpretation, any notable signals from free text or advisor situation field.\",\n  \"recommendedServiceTier\": {\n    \"tierId\": \"string\",\n    \"tierName\": \"string\",\n    \"reasoning\": \"1-2 sentences explaining why this tier fits\"\n  },\n  \"advisorMatchRanking\": [\n    {\n      \"advisorId\": \"string\",\n      \"advisorName\": \"string\",\n      \"matchScore\": 0-100,\n      \"reasoning\": \"1 sentence — specialization match, capacity, availability\"\n    }\n  ],\n  \"conversationStarters\": [\"3 suggested talking points tailored to this client\"],\n  \"riskFlags\": [\n    {\n      \"flag\": \"short label\",\n      \"detail\": \"1-2 sentence explanation\",\n      \"severity\": \"LOW | MEDIUM | HIGH\"\n    }\n  ],\n  \"priorityScore\": \"HIGH | MEDIUM | LOW\",\n  \"priorityReasoning\": \"1-2 sentences explaining the score\"\n}\n\n## ADVISOR MATCHING RULES\n- Rank by: specialization overlap (40%), available capacity as % of max (30%), overall fit (30%)\n- Advisors at ≥90% caseload capacity ranked lower regardless of specialization\n- If client is switching advisors, weight retention experience higher\n- Return ALL advisors ranked\n\n## RISK FLAG DETECTION — Scan ALL fields, especially freeText:\n- Divorce/separation → \"Complex asset division likely\"\n- Inheritance/windfall → \"Liquidity event — immediate planning needed\"\n- Very short timeline + aggressive risk → \"Expectations management needed\"\n- Switching advisor → \"Ask about pain points\"\n- Crypto/day trading/options → \"May expect services outside firm scope\"\n- Debt management primary + low assets → \"May need debt counseling referral\"\n- Multiple competing goals → \"Goal prioritization discussion needed\"\n- If no flags → empty array\n\n## PRIORITY SCORING\n- HIGH: Assets ≥ $500K OR urgency signals (inheritance, life event, switching) OR multiple high-value goals\n- MEDIUM: Assets $100K–$500K with good goal-service fit\n- LOW: Assets $100K–$250K with single goal or long timeline\n\n## CRITICAL RULES\n- Output ONLY valid JSON matching the schema\n- profileSummary must SYNTHESIZE, not just repeat form fields\n- Never fabricate info not in the intake data\n- If freeText is empty, note \"No additional context provided\"\n- Process ALL leads — you are analyzing data, not conversing"
+        },
+        "text": "=Lead Data:\n{{ JSON.stringify($json.leadData, null, 2) }}\n\nAvailable Advisors:\n{{ JSON.stringify($json.advisors, null, 2) }}\n\nService Tiers:\n{{ JSON.stringify($json.serviceTiers, null, 2) }}",
+        "hasOutputParser": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1240, 200],
+      "id": "enrichment-agent",
+      "name": "Lead Enrichment Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": { "temperature": 0.1 }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1240, 420],
+      "id": "gemini-enrichment",
+      "name": "Gemini 2.5 Flash (Enrichment)",
+      "credentials": { "googleGeminiApi": { "id": "YOUR_GEMINI_CRED_ID", "name": "Google Gemini" } }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"profileSummary\": { \"type\": \"string\" },\n    \"recommendedServiceTier\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"tierId\": { \"type\": \"string\" },\n        \"tierName\": { \"type\": \"string\" },\n        \"reasoning\": { \"type\": \"string\" }\n      },\n      \"required\": [\"tierId\", \"tierName\", \"reasoning\"]\n    },\n    \"advisorMatchRanking\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"advisorId\": { \"type\": \"string\" },\n          \"advisorName\": { \"type\": \"string\" },\n          \"matchScore\": { \"type\": \"number\" },\n          \"reasoning\": { \"type\": \"string\" }\n        },\n        \"required\": [\"advisorId\", \"advisorName\", \"matchScore\", \"reasoning\"]\n      }\n    },\n    \"conversationStarters\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } },\n    \"riskFlags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"flag\": { \"type\": \"string\" },\n          \"detail\": { \"type\": \"string\" },\n          \"severity\": { \"type\": \"string\", \"enum\": [\"LOW\", \"MEDIUM\", \"HIGH\"] }\n        },\n        \"required\": [\"flag\", \"detail\", \"severity\"]\n      }\n    },\n    \"priorityScore\": { \"type\": \"string\", \"enum\": [\"HIGH\", \"MEDIUM\", \"LOW\"] },\n    \"priorityReasoning\": { \"type\": \"string\" }\n  },\n  \"required\": [\"profileSummary\", \"recommendedServiceTier\", \"advisorMatchRanking\", \"conversationStarters\", \"riskFlags\", \"priorityScore\", \"priorityReasoning\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [1380, 420],
+      "id": "enrichment-parser",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Save enrichment results to Redis + prepare Sheets update\nconst enrichment = $('Lead Enrichment Agent').first().json;\nconst lead = $('Verify & Lock Status').first().json;\nconst leadId = lead.leadId;\n\n// Top advisor for availability check\nconst topAdvisor = enrichment.advisorMatchRanking && enrichment.advisorMatchRanking[0]\n  ? enrichment.advisorMatchRanking[0]\n  : { advisorId: 'ADV001', advisorName: 'Michael Torres' };\n\nreturn [{\n  json: {\n    leadId,\n    status: 'PENDING_AVAILABILITY_CHECK',\n    profileSummary: enrichment.profileSummary,\n    recommendedServiceTier: JSON.stringify(enrichment.recommendedServiceTier),\n    advisorMatchRanking: JSON.stringify(enrichment.advisorMatchRanking),\n    conversationStarters: JSON.stringify(enrichment.conversationStarters),\n    riskFlags: JSON.stringify(enrichment.riskFlags),\n    priorityScore: enrichment.priorityScore,\n    priorityReasoning: enrichment.priorityReasoning,\n    topAdvisorId: topAdvisor.advisorId,\n    topAdvisorName: topAdvisor.advisorName,\n    preferredDate: lead.preferredDate,\n    preferredTime: lead.preferredTime,\n    backupDate: lead.backupDate,\n    backupTime: lead.backupTime\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 200],
+      "id": "merge-enrichment",
+      "name": "Merge Enrichment Results"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "value": "={{ JSON.stringify({ status: $json.status, profileSummary: $json.profileSummary, recommendedServiceTier: $json.recommendedServiceTier, advisorMatchRanking: $json.advisorMatchRanking, conversationStarters: $json.conversationStarters, riskFlags: $json.riskFlags, priorityScore: $json.priorityScore, priorityReasoning: $json.priorityReasoning }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1760, 200],
+      "id": "save-enrichment-redis",
+      "name": "Save Enrichment to Redis",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $('Merge Enrichment Results').first().json.leadId }}" }] },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "={{ $('Merge Enrichment Results').first().json.status }}",
+            "priorityScore": "={{ $('Merge Enrichment Results').first().json.priorityScore }}",
+            "profileSummary": "={{ $('Merge Enrichment Results').first().json.profileSummary }}",
+            "recommendedServiceTier": "={{ $('Merge Enrichment Results').first().json.recommendedServiceTier }}",
+            "advisorMatchRanking": "={{ $('Merge Enrichment Results').first().json.advisorMatchRanking }}",
+            "riskFlags": "={{ $('Merge Enrichment Results').first().json.riskFlags }}",
+            "conversationStarters": "={{ $('Merge Enrichment Results').first().json.conversationStarters }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2000, 200],
+      "id": "update-sheets-enrichment",
+      "name": "Update Leads Sheet (Enrichment)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "value": "WF3_AVAILABILITY_WORKFLOW_ID", "mode": "id" },
+        "options": { "waitForSubWorkflow": false }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [2240, 200],
+      "id": "trigger-availability",
+      "name": "Trigger WF3 - Availability Check"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [1240, 600],
+      "id": "wf2-error-trigger",
+      "name": "Catch WF2 Errors"
+    },
+    {
+      "parameters": {
+        "jsCode": "// On error, set lead status to ENRICHMENT_FAILED\nconst errorData = $input.first().json;\nreturn [{ json: { error: errorData, action: 'ENRICHMENT_FAILED' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, 600],
+      "id": "wf2-error-handler",
+      "name": "Handle Enrichment Error"
+    },
+    {
+      "parameters": {
+        "sendTo": "admin@northstarwealth.ca",
+        "subject": "⚠️ WF2 Enrichment FAILED — NorthStar Pipeline",
+        "message": "=AI Enrichment failed at {{ $now.toISO() }}\n\nError: {{ JSON.stringify($json.error) }}\n\nLead may need manual review.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1720, 600],
+      "id": "wf2-error-email",
+      "name": "Send WF2 Error Alert",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+    }
+  ],
+  "connections": {
+    "Called from WF1": { "main": [[{ "node": "Get Lead State", "type": "main", "index": 0 }]] },
+    "Get Lead State": { "main": [[{ "node": "Verify & Lock Status", "type": "main", "index": 0 }]] },
+    "Verify & Lock Status": { "main": [[{ "node": "Set Status ENRICHING", "type": "main", "index": 0 }]] },
+    "Set Status ENRICHING": { "main": [
+      [{ "node": "Get Advisors Cache", "type": "main", "index": 0 }],
+      [{ "node": "Get Service Tiers Cache", "type": "main", "index": 0 }]
+    ]},
+    "Get Advisors Cache": { "main": [[{ "node": "Merge Lead + Business Data", "type": "main", "index": 0 }]] },
+    "Get Service Tiers Cache": { "main": [[{ "node": "Merge Lead + Business Data", "type": "main", "index": 0 }]] },
+    "Merge Lead + Business Data": { "main": [[{ "node": "Lead Enrichment Agent", "type": "main", "index": 0 }]] },
+    "Lead Enrichment Agent": { "main": [[{ "node": "Merge Enrichment Results", "type": "main", "index": 0 }]] },
+    "Gemini 2.5 Flash (Enrichment)": { "ai_languageModel": [[{ "node": "Lead Enrichment Agent", "type": "ai_languageModel", "index": 0 }]] },
+    "Structured Output Parser": { "ai_outputParser": [[{ "node": "Lead Enrichment Agent", "type": "ai_outputParser", "index": 0 }]] },
+    "Merge Enrichment Results": { "main": [[{ "node": "Save Enrichment to Redis", "type": "main", "index": 0 }]] },
+    "Save Enrichment to Redis": { "main": [[{ "node": "Update Leads Sheet (Enrichment)", "type": "main", "index": 0 }]] },
+    "Update Leads Sheet (Enrichment)": { "main": [[{ "node": "Trigger WF3 - Availability Check", "type": "main", "index": 0 }]] },
+    "Catch WF2 Errors": { "main": [[{ "node": "Handle Enrichment Error", "type": "main", "index": 0 }]] },
+    "Handle Enrichment Error": { "main": [[{ "node": "Send WF2 Error Alert", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "wf2-enrichment-v1",
+  "meta": { "instanceId": "northstar-pipeline" },
+  "id": "wf2-enrichment",
+  "tags": [{ "name": "northstar" }, { "name": "enrichment" }, { "name": "ai" }]
+}

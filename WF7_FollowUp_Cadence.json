@@ -1,0 +1,209 @@
+{
+  "name": "WF7 - Follow-Up Cadence",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF7: FOLLOW-UP CADENCE\n\n**Trigger:** Schedule — every 1 hour\n\n**Logic:**\n- Scan Leads sheet for OUTREACH_IN_PROGRESS\n- 48hrs no reply → Follow-up #1\n- 96hrs no reply → Follow-up #2\n- 168hrs (7d) no reply → Mark UNRESPONSIVE\n\n**Max 2 follow-ups per lead.**",
+        "height": 260,
+        "width": 440,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-600, -100],
+      "id": "sn-wf7",
+      "name": "WF7 Overview"
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-200, 200],
+      "id": "hourly-trigger",
+      "name": "Every 1 Hour"
+    },
+    {
+      "parameters": {
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "status", "lookupValue": "OUTREACH_IN_PROGRESS" }] },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [40, 200],
+      "id": "fetch-outreach-leads",
+      "name": "Fetch OUTREACH_IN_PROGRESS Leads",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine which leads need follow-up action\nconst leads = $input.all().map(i => i.json).filter(l => l.leadId && l.lastEmailSentAt);\nconst now = new Date();\nconst results = [];\n\nfor (const lead of leads) {\n  const lastEmail = new Date(lead.lastEmailSentAt);\n  const hoursElapsed = (now - lastEmail) / (1000 * 60 * 60);\n  const followUpCount = Number(lead.followUpCount) || 0;\n\n  let action = null;\n  if (hoursElapsed >= 168 && followUpCount >= 2) {\n    action = 'MARK_UNRESPONSIVE';\n  } else if (hoursElapsed >= 96 && followUpCount === 1) {\n    action = 'FOLLOWUP_2';\n  } else if (hoursElapsed >= 48 && followUpCount === 0) {\n    action = 'FOLLOWUP_1';\n  }\n\n  if (action) {\n    results.push({\n      leadId: lead.leadId,\n      email: lead.email,\n      fullName: lead.fullName,\n      firstName: (lead.fullName || '').split(' ')[0],\n      assignedAdvisorName: lead.assignedAdvisorName || 'our team',\n      followUpCount,\n      hoursElapsed: Math.round(hoursElapsed),\n      action\n    });\n  }\n}\n\nif (results.length === 0) {\n  return []; // Nothing to do\n}\n\nreturn results.map(r => ({ json: r }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 200],
+      "id": "determine-actions",
+      "name": "Determine Follow-Up Actions"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputIndex": 0, "conditions": { "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "FOLLOWUP_1", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputIndex": 1, "conditions": { "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "FOLLOWUP_2", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputIndex": 2, "conditions": { "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "MARK_UNRESPONSIVE", "operator": { "type": "string", "operation": "equals" } }] } }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [520, 200],
+      "id": "action-switch",
+      "name": "Route Action",
+      "outputs": ["Follow-Up 1", "Follow-Up 2", "Unresponsive"]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Following up on your consultation — NorthStar Wealth Advisory",
+        "message": "=Hi {{ $json.firstName }},\n\nJust checking in — would you still like to schedule a consultation with {{ $json.assignedAdvisorName }}? The times I shared are still available, or I'm happy to find new options.\n\nJust reply to this email and we'll get you set up.\n\nBest,\nNorthStar Wealth Advisory",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [800, 60],
+      "id": "send-followup-1",
+      "name": "Send Follow-Up #1",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "We'd love to connect when you're ready — NorthStar Wealth Advisory",
+        "message": "=Hi {{ $json.firstName }},\n\nI wanted to reach out one more time. We'd love to connect you with {{ $json.assignedAdvisorName }} when you're ready.\n\nYou can reply to this email anytime, or if your situation has changed, no worries at all. We're here whenever you need us.\n\nWarm regards,\nNorthStar Wealth Advisory",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [800, 220],
+      "id": "send-followup-2",
+      "name": "Send Follow-Up #2",
+      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $json.leadId }}" }] },
+        "columns": { "mappingMode": "defineBelow", "value": { "followUpCount": "1", "lastEmailSentAt": "={{ $now.toISO() }}" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1080, 60],
+      "id": "update-fu1",
+      "name": "Update Sheets (FU1)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Send Follow-Up #1').item.json.leadId || $json.leadId }}",
+        "value": "={{ JSON.stringify({ followUpCount: '1', lastEmailSentAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1360, 60],
+      "id": "redis-fu1",
+      "name": "Redis Update (FU1)",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $json.leadId }}" }] },
+        "columns": { "mappingMode": "defineBelow", "value": { "followUpCount": "2", "lastEmailSentAt": "={{ $now.toISO() }}" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1080, 220],
+      "id": "update-fu2",
+      "name": "Update Sheets (FU2)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Send Follow-Up #2').item.json.leadId || $json.leadId }}",
+        "value": "={{ JSON.stringify({ followUpCount: '2', lastEmailSentAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1360, 220],
+      "id": "redis-fu2",
+      "name": "Redis Update (FU2)",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $json.leadId }}" }] },
+        "columns": { "mappingMode": "defineBelow", "value": { "status": "UNRESPONSIVE" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [800, 380],
+      "id": "update-unresponsive",
+      "name": "Update Sheets (Unresponsive)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'UNRESPONSIVE', markedUnresponsiveAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1080, 380],
+      "id": "redis-unresponsive",
+      "name": "Redis Set UNRESPONSIVE",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    }
+  ],
+  "connections": {
+    "Every 1 Hour": { "main": [[{ "node": "Fetch OUTREACH_IN_PROGRESS Leads", "type": "main", "index": 0 }]] },
+    "Fetch OUTREACH_IN_PROGRESS Leads": { "main": [[{ "node": "Determine Follow-Up Actions", "type": "main", "index": 0 }]] },
+    "Determine Follow-Up Actions": { "main": [[{ "node": "Route Action", "type": "main", "index": 0 }]] },
+    "Route Action": { "main": [
+      [{ "node": "Send Follow-Up #1", "type": "main", "index": 0 }],
+      [{ "node": "Send Follow-Up #2", "type": "main", "index": 0 }],
+      [{ "node": "Update Sheets (Unresponsive)", "type": "main", "index": 0 }]
+    ]},
+    "Send Follow-Up #1": { "main": [[{ "node": "Update Sheets (FU1)", "type": "main", "index": 0 }]] },
+    "Update Sheets (FU1)": { "main": [[{ "node": "Redis Update (FU1)", "type": "main", "index": 0 }]] },
+    "Send Follow-Up #2": { "main": [[{ "node": "Update Sheets (FU2)", "type": "main", "index": 0 }]] },
+    "Update Sheets (FU2)": { "main": [[{ "node": "Redis Update (FU2)", "type": "main", "index": 0 }]] },
+    "Update Sheets (Unresponsive)": { "main": [[{ "node": "Redis Set UNRESPONSIVE", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "wf7-followup-v1",
+  "meta": { "instanceId": "northstar-pipeline" },
+  "id": "wf7-followup",
+  "tags": [{ "name": "northstar" }, { "name": "followup" }]
+}

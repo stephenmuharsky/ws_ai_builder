@@ -1,0 +1,116 @@
+{
+  "name": "WF3 - Availability Pre-Check",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF3: AVAILABILITY PRE-CHECK\n\n**Trigger:** Called by WF2 after enrichment\n\n**Flow:**\n1. Load lead data + top advisor from enrichment\n2. Check preferred time availability with top-ranked advisor\n3. If unavailable, check backup time\n4. Set availability status:\n   - PREFERRED_AVAILABLE → instant book on admin approve\n   - BACKUP_AVAILABLE → instant book on admin approve  \n   - SCHEDULING_REQUIRED → email outreach needed\n5. Update Redis + Sheets, set status PENDING_REVIEW\n\n**Reuses availability checking pattern from existing booking system.**\nChecks Google Sheets Advisor Availability + Google Calendar conflicts.",
+        "height": 440,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-600, -200],
+      "id": "sn-wf3-overview",
+      "name": "WF3 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [{ "name": "leadId" }, { "name": "topAdvisorId" }, { "name": "preferredDate" }, { "name": "preferredTime" }, { "name": "backupDate" }, { "name": "backupTime" }]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 200],
+      "id": "wf3-trigger",
+      "name": "Called from WF2"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:advisor_availability"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 200],
+      "id": "get-avail-cache",
+      "name": "Get Availability Cache",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:config"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 400],
+      "id": "get-config-wf3",
+      "name": "Get Config",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check availability for preferred and backup times\n// Deterministic check against cached availability data\nconst input = $('Called from WF2').first().json;\nlet availRaw = $('Get Availability Cache').first().json;\nlet configRaw = $('Get Config').first().json;\n\nconst availability = JSON.parse(typeof availRaw === 'string' ? availRaw : (availRaw.data || '[]'));\nconst config = JSON.parse(typeof configRaw === 'string' ? configRaw : (configRaw.data || '{}'));\n\nconst duration = Number(config.consultation_duration_minutes) || 60;\nconst buffer = Number(config.consultation_buffer_minutes) || 15;\nconst totalBlock = duration + buffer;\n\nfunction parseBlockedTimes(blockedStr) {\n  if (!blockedStr || blockedStr.trim() === '') return [];\n  // Blocked times format: \"9:00 AM-10:00 AM, 2:00 PM-3:15 PM\"\n  return blockedStr.split(',').map(s => s.trim()).filter(Boolean);\n}\n\nfunction timeToMinutes(timeStr) {\n  // Handle \"HH:MM\" 24hr format\n  const [h, m] = timeStr.split(':').map(Number);\n  return h * 60 + m;\n}\n\nfunction checkSlot(date, time, advisorId) {\n  if (!date || !time) return { available: false, reason: 'missing_data' };\n  \n  // Find availability row for this advisor on this date\n  const row = availability.find(r => r.date === date && r.advisorId === advisorId);\n  \n  if (!row) return { available: false, reason: 'no_availability_data' };\n  if (row.workingHours === 'OFF') return { available: false, reason: 'day_off' };\n  \n  // Check if time is within working hours\n  const [startHours, endHours] = row.workingHours.split('-').map(s => s.trim());\n  const workStart = timeToMinutes(startHours);\n  const workEnd = timeToMinutes(endHours);\n  const requestedStart = timeToMinutes(time);\n  const requestedEnd = requestedStart + totalBlock;\n  \n  if (requestedStart < workStart || requestedEnd > workEnd) {\n    return { available: false, reason: 'outside_hours' };\n  }\n  \n  // Check blocked times\n  const blocked = parseBlockedTimes(row.blockedTimes);\n  for (const slot of blocked) {\n    const [bStart, bEnd] = slot.split('-').map(s => {\n      // Parse \"9:00 AM\" or \"14:00\" format\n      const match = s.trim().match(/(\\d+):(\\d+)\\s*(AM|PM)?/i);\n      if (!match) return 0;\n      let h = parseInt(match[1]);\n      const m = parseInt(match[2]);\n      if (match[3]) {\n        if (match[3].toUpperCase() === 'PM' && h !== 12) h += 12;\n        if (match[3].toUpperCase() === 'AM' && h === 12) h = 0;\n      }\n      return h * 60 + m;\n    });\n    \n    // Check overlap\n    if (requestedStart < bEnd && requestedEnd > bStart) {\n      return { available: false, reason: 'time_conflict' };\n    }\n  }\n  \n  return { available: true };\n}\n\n// Check preferred time\nconst preferred = checkSlot(input.preferredDate, input.preferredTime, input.topAdvisorId);\n\nlet result;\nif (preferred.available) {\n  result = {\n    availabilityStatus: 'PREFERRED_AVAILABLE',\n    suggestedBooking: {\n      advisorId: input.topAdvisorId,\n      date: input.preferredDate,\n      time: input.preferredTime\n    }\n  };\n} else {\n  // Check backup time\n  const backup = checkSlot(input.backupDate, input.backupTime, input.topAdvisorId);\n  if (backup.available) {\n    result = {\n      availabilityStatus: 'BACKUP_AVAILABLE',\n      suggestedBooking: {\n        advisorId: input.topAdvisorId,\n        date: input.backupDate,\n        time: input.backupTime\n      }\n    };\n  } else {\n    result = {\n      availabilityStatus: 'SCHEDULING_REQUIRED',\n      suggestedBooking: null,\n      preferredReason: preferred.reason,\n      backupReason: backup.reason\n    };\n  }\n}\n\nreturn [{\n  json: {\n    leadId: input.leadId,\n    ...result\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 200],
+      "id": "check-availability",
+      "name": "Check Preferred & Backup Availability"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'PENDING_REVIEW', availabilityStatus: $json.availabilityStatus, suggestedBooking: JSON.stringify($json.suggestedBooking) }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [600, 200],
+      "id": "update-redis-avail",
+      "name": "Update Redis (Availability + PENDING_REVIEW)",
+      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Leads", "mode": "list" },
+        "filtersUI": { "values": [{ "lookupColumn": "leadId", "lookupValue": "={{ $('Check Preferred & Backup Availability').first().json.leadId }}" }] },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "PENDING_REVIEW",
+            "availabilityStatus": "={{ $('Check Preferred & Backup Availability').first().json.availabilityStatus }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [880, 200],
+      "id": "update-sheets-avail",
+      "name": "Update Leads Sheet (Status)",
+      "credentials": { "googleSheetsOAuth2Api": { "id": "YOUR_GOOGLE_SHEETS_CRED_ID", "name": "Google Sheets" } }
+    }
+  ],
+  "connections": {
+    "Called from WF2": { "main": [
+      [{ "node": "Get Availability Cache", "type": "main", "index": 0 }],
+      [{ "node": "Get Config", "type": "main", "index": 0 }]
+    ]},
+    "Get Availability Cache": { "main": [[{ "node": "Check Preferred & Backup Availability", "type": "main", "index": 0 }]] },
+    "Get Config": { "main": [[{ "node": "Check Preferred & Backup Availability", "type": "main", "index": 0 }]] },
+    "Check Preferred & Backup Availability": { "main": [[{ "node": "Update Redis (Availability + PENDING_REVIEW)", "type": "main", "index": 0 }]] },
+    "Update Redis (Availability + PENDING_REVIEW)": { "main": [[{ "node": "Update Leads Sheet (Status)", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "wf3-availability-v1",
+  "meta": { "instanceId": "northstar-pipeline" },
+  "id": "wf3-availability",
+  "tags": [{ "name": "northstar" }, { "name": "availability" }]
+}
