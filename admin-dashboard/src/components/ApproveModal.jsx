@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import { sampleAdvisors } from '../data/sampleLeads'
+import { useAdvisors } from '../hooks/useAdvisors'
 import { safeJsonParse, formatDate, formatTime } from '../utils/formatters'
 
 export default function ApproveModal({ lead, onConfirm, onClose, loading }) {
+  const { advisors } = useAdvisors()
   const advisorRanking = safeJsonParse(lead.advisorMatchRanking, [])
   const suggestedBooking = safeJsonParse(lead.suggestedBooking, null)
   const topAdvisor = advisorRanking[0] || {}
   const isAvailable = lead.availabilityStatus === 'PREFERRED_AVAILABLE' || lead.availabilityStatus === 'BACKUP_AVAILABLE'
 
   const [selectedAdvisorId, setSelectedAdvisorId] = useState(topAdvisor.advisorId || '')
-  const selectedAdvisor = sampleAdvisors.find(a => a.advisorId === selectedAdvisorId) || {}
+  const selectedAdvisor = advisors.find(a => a.advisorId === selectedAdvisorId) || {}
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -38,7 +39,7 @@ export default function ApproveModal({ lead, onConfirm, onClose, loading }) {
               className="w-full px-4 py-2.5 bg-white border border-navy-200 rounded-lg text-sm
                          focus:outline-none focus:border-accent-green focus:ring-2 focus:ring-accent-green/20"
             >
-              {sampleAdvisors.map((adv) => {
+              {advisors.map((adv) => {
                 const match = advisorRanking.find(r => r.advisorId === adv.advisorId)
                 return (
                   <option key={adv.advisorId} value={adv.advisorId}>

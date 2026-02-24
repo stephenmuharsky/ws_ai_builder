@@ -37,7 +37,8 @@ export function useLeads(tab = 'pending') {
       const data = await apiFetchLeads(tab)
       setLeads(data.leads || [])
       setUsingFallback(false)
-    } catch {
+    } catch (err) {
+      console.warn(`Failed to fetch leads from data source, using sample data:`, err.message)
       setLeads(getFallbackLeads(tab))
       setUsingFallback(true)
     } finally {

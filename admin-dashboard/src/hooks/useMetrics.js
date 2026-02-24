@@ -27,7 +27,8 @@ export function useMetrics() {
     try {
       const data = await apiFetchMetrics()
       setMetrics(data)
-    } catch {
+    } catch (err) {
+      console.warn('Failed to fetch metrics, using sample data:', err.message)
       setMetrics(fallbackMetrics)
     } finally {
       setLoading(false)
