@@ -39,16 +39,23 @@ export default function ApproveModal({ lead, onConfirm, onClose, loading }) {
               className="w-full px-4 py-2.5 bg-white border border-navy-200 rounded-lg text-sm
                          focus:outline-none focus:border-accent-green focus:ring-2 focus:ring-accent-green/20"
             >
-              {advisors.map((adv) => {
-                const match = advisorRanking.find(r => r.advisorId === adv.advisorId)
+              {advisorRanking.map((match) => {
+                const adv = advisors.find(a => a.advisorId === match.advisorId)
+                const name = match.advisorName || (adv && adv.advisorName) || match.advisorId
                 return (
-                  <option key={adv.advisorId} value={adv.advisorId}>
-                    {adv.advisorName}
-                    {match ? ` (Score: ${match.matchScore})` : ''}
-                    {adv.advisorId === topAdvisor.advisorId ? ' -- AI Recommended' : ''}
+                  <option key={match.advisorId} value={match.advisorId}>
+                    {name} (Score: {match.matchScore})
+                    {match.advisorId === topAdvisor.advisorId ? ' -- AI Recommended' : ''}
                   </option>
                 )
               })}
+              {advisors
+                .filter(adv => !advisorRanking.some(r => r.advisorId === adv.advisorId))
+                .map((adv) => (
+                  <option key={adv.advisorId} value={adv.advisorId}>
+                    {adv.advisorName}
+                  </option>
+                ))}
             </select>
             {topAdvisor.reasoning && (
               <p className="mt-1.5 text-xs text-navy-400">

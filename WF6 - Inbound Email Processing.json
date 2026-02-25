@@ -1,0 +1,800 @@
+{
+  "name": "WF6 - Inbound Email Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF6: INBOUND EMAIL PROCESSING\n\n**Trigger:** Gmail trigger polls for new unread emails matching NorthStar threads\n\n**Flow:**\n1. Match sender email to lead in Airtable\n2. Verify lead is in OUTREACH_IN_PROGRESS status\n3. AI Email Reply Parser classifies intent:\n   - selected → book the chosen slot\n   - suggest_alternative → check that time\n   - cancel → mark cancelled\n   - question → answer and re-prompt\n   - unclear → ask for clarification\n4. Execute appropriate action",
+        "height": 400,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        48
+      ],
+      "id": "1ad13517-b5a5-4191-8be2-a7325fbd1284",
+      "name": "WF6 Overview"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "q": "to:smuharsk@gmail.com subject:(NorthStar Wealth Advisory) -from:smuharsk@gmail.com",
+          "readStatus": "unread"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        64,
+        448
+      ],
+      "id": "41a96d54-8480-4e42-83ac-5b3d6871978b",
+      "name": "Gmail Trigger - New Replies",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={{ '{email}=\"' + ($json.from?.value?.[0]?.address || $json.from || '') + '\"' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        304,
+        448
+      ],
+      "id": "7ba15a79-3395-498d-844b-68364cdb5b9b",
+      "name": "Match Email to Lead (Airtable)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-lead",
+              "leftValue": "={{ $json.leadId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        544,
+        448
+      ],
+      "id": "79b681a1-90a7-4fb5-81b5-79e25a77d48d",
+      "name": "Lead Found?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "status-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "OUTREACH_IN_PROGRESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        784,
+        448
+      ],
+      "id": "fcb61084-d1aa-4314-92ae-237503b844b6",
+      "name": "In Outreach?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Match Email to Lead (Airtable)').first().json;\nconst emailBody = $('Gmail Trigger - New Replies').first().json.text || $('Gmail Trigger - New Replies').first().json.snippet || '';\n\nlet pendingSlots = [];\ntry { pendingSlots = JSON.parse(lead.pendingSlots || '[]'); } catch(e) {}\n\nreturn [{ json: {\n  leadId: lead.leadId,\n  email: lead.email,\n  fullName: lead.fullName,\n  assignedAdvisorId: lead.assignedAdvisorId,\n  assignedAdvisorName: lead.assignedAdvisorName,\n  emailBody,\n  pendingSlots\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        448
+      ],
+      "id": "eb41ec51-30b7-46b2-ba84-d51c7dcad785",
+      "name": "Prep Parser Context"
+    },
+    {
+      "parameters": {
+        "text": "=Client's email reply:\n{{ $json.emailBody }}\n\nPending slots offered:\n{{ JSON.stringify($json.pendingSlots) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You classify email replies from prospective clients who were offered consultation time slots.\n\n## CONTEXT\n- Client was sent an email with numbered available time slots\n- pendingSlots: JSON array of offered datetimes\n- Client's reply needs classification\n\n## OUTPUT FORMAT\n{\"action\": \"selected\" | \"suggest_alternative\" | \"cancel\" | \"question\" | \"unclear\", \"selectedSlotIndex\": number | null, \"suggestedDatetime\": \"YYYY-MM-DD HH:MM\" | null, \"extractedQuestion\": \"string\" | null}\n\n## RULES\n- selected: Client chose offered slot. Set selectedSlotIndex (0-based).\n- suggest_alternative: Client proposes different time\n- cancel: Client says never mind, not interested, cancel\n- question: Client asks a question before scheduling\n- unclear: Can't determine intent\n- Cancel keywords always win. Output ONLY valid JSON"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1264,
+        448
+      ],
+      "id": "e04dc22a-7cb4-48e6-b38e-74c1fabdffec",
+      "name": "Email Reply Parser"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        672
+      ],
+      "id": "e09d6fb6-d9a2-482e-92e0-2dba962565cc",
+      "name": "Gemini (Parser)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{ \"type\": \"object\", \"properties\": { \"action\": { \"type\": \"string\", \"enum\": [\"selected\", \"suggest_alternative\", \"cancel\", \"question\", \"unclear\"] }, \"selectedSlotIndex\": { \"type\": [\"integer\", \"null\"] }, \"suggestedDatetime\": { \"type\": [\"string\", \"null\"] }, \"extractedQuestion\": { \"type\": [\"string\", \"null\"] } }, \"required\": [\"action\"] }"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        672
+      ],
+      "id": "71b6d3f3-280b-4bef-bcd4-518769532ff4",
+      "name": "Reply Parser Schema"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "selected",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "cancel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "question",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "unclear",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1584,
+        384
+      ],
+      "id": "1db038b3-85e6-4b61-bbeb-8afaba02681d",
+      "name": "Route by Action"
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Email Reply Parser').first().json;\nconst context = $('Prep Parser Context').first().json;\nconst idx = parsed.selectedSlotIndex || 0;\nconst slot = context.pendingSlots[idx];\nif (!slot) throw new Error(`Invalid slot index ${idx}`);\nreturn [{ json: {\n  leadId: context.leadId, email: context.email, fullName: context.fullName,\n  advisorId: context.assignedAdvisorId, advisorName: context.assignedAdvisorName,\n  bookingDate: slot.date, bookingTime: slot.time, bookingDisplay: slot.label\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        288
+      ],
+      "id": "e2656aab-e5c6-4569-979e-e11b312b40b6",
+      "name": "Prep Selected Booking"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Your consultation is confirmed - NorthStar Wealth Advisory",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2096,
+        288
+      ],
+      "id": "2d6d7649-8800-470b-8d30-ac60b9477075",
+      "name": "Send Booking Confirmation",
+      "webhookId": "f85bed1c-e0e5-47f5-b968-d7739a769e9c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Prep Selected Booking').first().json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'BOOKED', bookedAt: $now.toISO(), appointmentDatetime: $('Prep Selected Booking').first().json.bookingDate + 'T' + $('Prep Selected Booking').first().json.bookingTime + ':00' }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2384,
+        288
+      ],
+      "id": "f8d2ddae-aa8b-43c1-a38a-8e2f79145047",
+      "name": "Set BOOKED",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "=FIND(\"{{ $('Prep Selected Booking').first().json.leadId }}\", {leadId})",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2656,
+        288
+      ],
+      "id": "c3659380-c866-4c7c-a055-2d7cf68f9d09",
+      "name": "Find Lead (Book Reply)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "BOOKED",
+            "bookedAt": "={{ $now.toISO() }}",
+            "appointmentDatetime": "={{ $('Prep Selected Booking').first().json.bookingDate + 'T' + $('Prep Selected Booking').first().json.bookingTime + ':00' }}",
+            "followUpCount": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2896,
+        288
+      ],
+      "id": "b3b6a398-f67e-4e8c-ae1c-68aec7ce5b6e",
+      "name": "Update Lead (BOOKED Reply)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Prep Parser Context').first().json;\nreturn [{ json: { leadId: context.leadId, email: context.email, firstName: context.fullName.split(' ')[0] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        448
+      ],
+      "id": "ed7cd917-cc9b-494e-891a-0978857d9701",
+      "name": "Prep Cancel"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "We understand - NorthStar Wealth Advisory",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2096,
+        448
+      ],
+      "id": "5696f8a9-288a-479d-9448-c7e7794ada31",
+      "name": "Send Cancel Ack",
+      "webhookId": "4e9bc7fa-a82f-4770-9cca-6faff22f4111",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Prep Cancel').first().json.leadId }}",
+        "value": "={{ JSON.stringify({ status: 'CANCELLED_BY_LEAD', cancelledAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2384,
+        448
+      ],
+      "id": "8460030a-0f79-4b53-a2c0-27180de0a7d4",
+      "name": "Set CANCELLED",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Prep Parser Context').first().json;\nconst parsed = $('Email Reply Parser').first().json;\nconst firstName = context.fullName.split(' ')[0];\nlet msg;\nif (parsed.action === 'question') {\n  msg = `Hi ${firstName},\\n\\nGreat question! ${context.assignedAdvisorName} can address that during your consultation.\\n\\nIn the meantime, would any of the times I shared work for you? Just reply with your preferred option.\\n\\nBest,\\nNorthStar Wealth Advisory`;\n} else {\n  msg = `Hi ${firstName},\\n\\nThanks for your reply! I want to make sure I get this right - were you selecting one of the available times, or would you like to suggest a different time?\\n\\nJust reply with a number (1-4) to pick a slot, or suggest another time.\\n\\nBest,\\nNorthStar Wealth Advisory`;\n}\nreturn [{ json: { to: context.email, body: msg, leadId: context.leadId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        640
+      ],
+      "id": "8fd81551-8c7b-4bcf-bc37-a18919f0e4cb",
+      "name": "Build Clarification"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "Re: Your consultation - NorthStar Wealth Advisory",
+        "message": "={{ $json.body }}",
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2096,
+        640
+      ],
+      "id": "96b16e33-f2c1-47bc-be1e-1263431e8dbe",
+      "name": "Send Clarification",
+      "webhookId": "ae8e00b9-bd9e-4fc4-b009-c29bbc95f935",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Build Clarification').first().json.leadId }}",
+        "value": "={{ JSON.stringify({ lastEmailSentAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2384,
+        640
+      ],
+      "id": "618f576c-a228-423f-b4d2-d884367e343a",
+      "name": "Update lastEmailSentAt",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger - New Replies": {
+      "main": [
+        [
+          {
+            "node": "Match Email to Lead (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Email to Lead (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Lead Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Found?": {
+      "main": [
+        [
+          {
+            "node": "In Outreach?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "In Outreach?": {
+      "main": [
+        [
+          {
+            "node": "Prep Parser Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Parser Context": {
+      "main": [
+        [
+          {
+            "node": "Email Reply Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Reply Parser": {
+      "main": [
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Parser)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Email Reply Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply Parser Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Email Reply Parser",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Action": {
+      "main": [
+        [
+          {
+            "node": "Prep Selected Booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Selected Booking": {
+      "main": [
+        [
+          {
+            "node": "Send Booking Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Booking Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Set BOOKED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set BOOKED": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (Book Reply)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (Book Reply)": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (BOOKED Reply)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Cancel": {
+      "main": [
+        [
+          {
+            "node": "Send Cancel Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Cancel Ack": {
+      "main": [
+        [
+          {
+            "node": "Set CANCELLED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Clarification": {
+      "main": [
+        [
+          {
+            "node": "Send Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Clarification": {
+      "main": [
+        [
+          {
+            "node": "Update lastEmailSentAt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4d38e38c-a766-46c2-b4c0-c77016a213e0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "FwjZ8lj24k8BtA32",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:06:21.687Z",
+      "updatedAt": "2026-02-24T16:06:21.687Z",
+      "id": "UXLCDIP0yOGvTroG",
+      "name": "booking"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:06:49.633Z",
+      "updatedAt": "2026-02-24T16:06:49.633Z",
+      "id": "iuFcNetTdF2CEP37",
+      "name": "email"
+    }
+  ]
+}

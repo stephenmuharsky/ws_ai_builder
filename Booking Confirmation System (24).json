@@ -1,0 +1,2172 @@
+{
+  "name": "Booking Confirmation System",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# BOOKING CONFIRMATION SYSTEM (WITH QUEUE)\n\n## Storage:\n- Google Sheet: `Booking Confirmed` column (Yes/No) - permanent\n- Redis: `confirm_state_{phone}` hash - temporary state tracking\n\n## Redis Hash Fields:\n- `state`: PENDING_CONFIRM | PENDING_CANCEL\n- `currentBookingId`: Active booking being confirmed\n- `rowNumber`: Sheet row to update/delete\n- `bookingInfo`: JSON with current booking details\n- `queue`: JSON array of remaining booking IDs\n- `allDetails`: JSON object {bookingId: bookingInfo, ...}\n\n## Flow:\n1. Daily 8AM: Find tomorrow's unconfirmed bookings\n2. Group by phone, send FIRST reminder only\n3. Set Redis with queue of remaining bookings\n4. YES → Confirm current, check queue → send next or finish\n5. NO → Set PENDING_CANCEL, ask \"reply CANCEL\"\n6. CANCEL → Delete row, check queue → send next or finish",
+        "height": 520,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2800,
+        48
+      ],
+      "id": "b992168f-bfe7-4ad8-bbaa-046fff8f2636",
+      "name": "System Overview"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst tomorrow = new Date(now);\ntomorrow.setDate(tomorrow.getDate() + 1);\n\nconst year = tomorrow.getFullYear();\nconst month = String(tomorrow.getMonth() + 1).padStart(2, '0');\nconst day = String(tomorrow.getDate()).padStart(2, '0');\n\nreturn [{\n  json: {\n    targetDate: `${year}-${month}-${day}`,\n    targetDateDisplay: tomorrow.toLocaleDateString('es-MX', { \n      weekday: 'long', \n      month: 'long', \n      day: 'numeric',\n      timeZone: 'America/Cancun'\n    })\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        32
+      ],
+      "id": "437a3fac-93f9-4834-8eaf-9fec5de0573d",
+      "name": "Calculate Tomorrow"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk",
+          "mode": "list",
+          "cachedResultName": " n8n-amar-nails-dev",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 569810801,
+          "mode": "list",
+          "cachedResultName": "Bookings (Future)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit#gid=569810801"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -448,
+        32
+      ],
+      "id": "e72412a7-d0f3-4840-97a7-cebcc8033b85",
+      "name": "Get Future Bookings",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l0XnGJfEosKL4HxW",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst now = new Date();\n\n// Get today and tomorrow in Cancun timezone\nconst cancunNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Cancun' }));\nconst todayStr = cancunNow.toISOString().split('T')[0];\n\nconst tomorrow = new Date(cancunNow);\ntomorrow.setDate(tomorrow.getDate() + 1);\nconst tomorrowStr = tomorrow.toISOString().split('T')[0];\n\nconst remindersToSend = [];\n\n// Spanish day/month names for display\nconst days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];\nconst months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i].json;\n  const bookingTimeStr = item['Booking Time'];\n  const contactId = item['Contact ID'];\n  \n  if (!bookingTimeStr || !contactId) continue;\n  \n  const bookingDate = new Date(bookingTimeStr);\n  const bookingDateStr = bookingDate.toISOString().split('T')[0];\n  \n  const confirmed = String(item['Booking Confirmed'] || '').toLowerCase().trim();\n  \n  // Skip if already confirmed\n  if (confirmed === 'yes') continue;\n  \n  let shouldSend = false;\n  let reminderType = '';\n  let urgency = '';\n  \n  // Tomorrow's bookings = first reminder\n  if (bookingDateStr === tomorrowStr) {\n    shouldSend = true;\n    reminderType = 'day_before';\n    urgency = 'mañana';\n  }\n  // Today's bookings (not confirmed) = second reminder\n  else if (bookingDateStr === todayStr) {\n    shouldSend = true;\n    reminderType = 'day_of';\n    urgency = 'HOY';\n  }\n  \n  if (shouldSend) {\n    const phone = String(contactId).replace(/\\.0$/, '').replace(/[^0-9]/g, '');\n    \n    // Format time manually - sheet times are already in Cancun local time\n    const hours = bookingDate.getHours();\n    const minutes = bookingDate.getMinutes();\n    const period = hours >= 12 ? 'PM' : 'AM';\n    let displayHour = hours > 12 ? hours - 12 : hours;\n    if (displayHour === 0) displayHour = 12;\n    const timeStr = `${displayHour}:${String(minutes).padStart(2, '0')} ${period}`;\n    \n    // Format date manually - no timezone conversion\n    const dateDisplay = `${days[bookingDate.getDay()]}, ${bookingDate.getDate()} de ${months[bookingDate.getMonth()]}`;\n    \n    // Calculate duration from Booking Time and Booking End Time if available\n    let duration = 45; // default\n    if (item['Booking  End Time']) {\n      try {\n        const startTime = new Date(bookingTimeStr);\n        const endTime = new Date(item['Booking  End Time']);\n        duration = Math.round((endTime - startTime) / (1000 * 60));\n      } catch(e) {}\n    }\n    \n    remindersToSend.push({\n      json: {\n        ...item,\n        rowNumber: i + 2,\n        phoneNumber: phone,\n        formattedTime: timeStr,\n        formattedDate: dateDisplay,\n        reminderType: reminderType,\n        urgency: urgency,\n        bookingInfo: JSON.stringify({\n          service: item['Booking Type'],\n          time: timeStr,\n          date: dateDisplay,\n          technician: item['Nail Technician'],\n          clientName: item['Client Name'],\n          rowNumber: i + 2,\n          employeeID: item['Employee ID'],\n          bookingTime: item['Booking Time'],\n          bookingId: item['Booking ID'],\n          duration: duration,\n          calendarEventId: item['Calendar Event ID'] || null\n        })\n      }\n    });\n  }\n}\n\nif (remindersToSend.length === 0) {\n  return [{ json: { noBookings: true } }];\n}\n\nreturn remindersToSend;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        32
+      ],
+      "id": "5e2ec789-8883-424b-a452-07f662aed925",
+      "name": "Filter Tomorrow Unconfirmed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.noBookings }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -80,
+        32
+      ],
+      "id": "7ca75e21-2152-4809-8fdc-8a32e07e3a87",
+      "name": "Has Bookings?"
+    },
+    {
+      "parameters": {
+        "content": "# RESPONSE HANDLER SECTION\n\nIntegrate this with your main workflow.\nAdd after 'Combine Messages' node.",
+        "height": 120,
+        "width": 400,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2208,
+        912
+      ],
+      "id": "b560a2f7-fc35-4f5c-9e9f-ec65d7b526bc",
+      "name": "Response Handler"
+    },
+    {
+      "parameters": {
+        "operation": "hget",
+        "key": "=confirm_state_{{ $json.phoneNumber }}",
+        "field": "rowNumber",
+        "propertyName": "rowNumber",
+        "options": {}
+      },
+      "type": "@iaconnecto/n8n-nodes-redis-extended.redisExtended",
+      "typeVersion": 1,
+      "position": [
+        -1760,
+        1008
+      ],
+      "id": "ae00bbc4-166d-4511-a738-0b91af106cc0",
+      "name": "Get Row Number",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "hget",
+        "key": "=confirm_state_{{ $('When Executed by Another Workflow').first().json.phoneNumber }}\n",
+        "field": "bookingInfo",
+        "propertyName": "bookingInfo",
+        "options": {}
+      },
+      "type": "@iaconnecto/n8n-nodes-redis-extended.redisExtended",
+      "typeVersion": 1,
+      "position": [
+        -1536,
+        1008
+      ],
+      "id": "a5895011-8f86-4191-bce2-a8d98a0ebba1",
+      "name": "Get Booking Info",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data from the trigger (passed from main workflow)\nconst trigger = $('When Executed by Another Workflow').first().json;\nconst phoneNumber = trigger.phoneNumber;\nconst messageBody = trigger.messageBody || '';\nconst confirmState = trigger.confirmState;\nconst bookingInfoStr = trigger.bookingInfo; // <-- GET FROM TRIGGER, NOT REDIS\n\nconst msg = messageBody.toUpperCase().trim();\n\n// Parse booking info\nlet bookingInfo = {};\ntry {\n  bookingInfo = JSON.parse(bookingInfoStr || '{}');\n} catch(e) {}\n\n// Keywords (case-insensitive)\nconst YES_KEYWORDS = ['YES', 'SI', 'SÍ', 'SIP', 'YEP', 'YA', 'OK', 'OKAY', 'CONFIRMO', 'CONFIRM'];\nconst NO_KEYWORDS = ['NO', 'NOPE', 'NEL', 'NAH'];\nconst CANCEL_KEYWORDS = ['CANCEL', 'CANCELAR', 'CANCELA'];\n\nlet intent = 'UNKNOWN';\nif (YES_KEYWORDS.some(k => msg === k)) intent = 'YES';\nelse if (NO_KEYWORDS.some(k => msg === k)) intent = 'NO';\nelse if (CANCEL_KEYWORDS.some(k => msg === k || msg.startsWith(k))) intent = 'CANCEL';\n\nreturn [{\n  json: {\n    phoneNumber,\n    messageBody: msg,\n    confirmState,\n    bookingInfo,\n    intent\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        1008
+      ],
+      "id": "a86860f1-f9bb-467e-963e-b2cbc7185009",
+      "name": "Parse Intent"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.confirmState }}",
+                    "rightValue": "PENDING_CONFIRM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "0b215b33-2a4c-4f69-938b-a94b696198ad"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PENDING_CONFIRM"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.confirmState }}",
+                    "rightValue": "PENDING_CANCEL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "451a08c5-4366-4f3c-b6d2-d4f56238b03b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PENDING_CANCEL"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1104,
+        992
+      ],
+      "id": "83a50015-6251-47f6-9de8-88509d4a3503",
+      "name": "Route by State"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "YES",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "72b48de8-8ed8-4d9e-83e1-22fceebacbf6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "YES"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "NO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "0f8865a6-e159-456c-9822-c428bc35efbb"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NO"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -720,
+        736
+      ],
+      "id": "080df282-5c70-47d3-b7a5-a4edf7936a34",
+      "name": "Route YES/NO"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk",
+          "mode": "list",
+          "cachedResultName": " n8n-amar-nails-dev",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 569810801,
+          "mode": "list",
+          "cachedResultName": "Bookings (Future)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit#gid=569810801"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Booking ID": "={{ $('Parse Intent').first().json.bookingInfo.bookingId }}",
+            "Booking Confirmed": "Yes"
+          },
+          "matchingColumns": [
+            "Booking ID"
+          ],
+          "schema": [
+            {
+              "id": "Booking Type",
+              "displayName": "Booking Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking Time",
+              "displayName": "Booking Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Nail Technician",
+              "displayName": "Nail Technician",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Employee ID",
+              "displayName": "Employee ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Client Name",
+              "displayName": "Client Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Contact ID",
+              "displayName": "Contact ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking Confirmed",
+              "displayName": "Booking Confirmed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Amount",
+              "displayName": "Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Payment Method",
+              "displayName": "Payment Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Tips",
+              "displayName": "Tips",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Extra",
+              "displayName": "Extra",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking  End Time",
+              "displayName": "Booking  End Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking Date",
+              "displayName": "Booking Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -112,
+        544
+      ],
+      "id": "f0ce7b4b-f023-4f59-a9ef-cd072ec085e6",
+      "name": "Set Confirmed = Yes",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l0XnGJfEosKL4HxW",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}",
+        "value": "={{ { state: 'PENDING_CANCEL', rowNumber: String($('Parse Intent').first().json.rowNumber), bookingInfo: JSON.stringify($('Parse Intent').first().json.bookingInfo) } }}",
+        "keyType": "hash",
+        "expire": true,
+        "ttl": 3600
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        752
+      ],
+      "id": "00a9a1e3-380e-41b9-a180-eb03fa921ebc",
+      "name": "Set Redis PENDING_CANCEL",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "CANCEL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b7d37f1f-c6fe-4dac-b049-f7d99f09c9c5"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CANCEL"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "YES",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "eb6184a9-66cf-4390-bdb9-19099305eb93"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "YES"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -720,
+        1184
+      ],
+      "id": "b169fe1a-c35f-4a19-9956-80921cd29ec7",
+      "name": "Route CANCEL/YES"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk",
+          "mode": "list",
+          "cachedResultName": " n8n-amar-nails-dev",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 569810801,
+          "mode": "list",
+          "cachedResultName": "Bookings (Future)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit#gid=569810801"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Booking ID": "={{ $('Parse Intent').first().json.bookingInfo.bookingId }}",
+            "Booking Confirmed": "Yes"
+          },
+          "matchingColumns": [
+            "Booking ID"
+          ],
+          "schema": [
+            {
+              "id": "Booking Type",
+              "displayName": "Booking Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking Time",
+              "displayName": "Booking Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Nail Technician",
+              "displayName": "Nail Technician",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Employee ID",
+              "displayName": "Employee ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Client Name",
+              "displayName": "Client Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Contact ID",
+              "displayName": "Contact ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking Confirmed",
+              "displayName": "Booking Confirmed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Amount",
+              "displayName": "Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Payment Method",
+              "displayName": "Payment Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Tips",
+              "displayName": "Tips",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Extra",
+              "displayName": "Extra",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking  End Time",
+              "displayName": "Booking  End Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking Date",
+              "displayName": "Booking Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Booking ID",
+              "displayName": "Booking ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -416,
+        1392
+      ],
+      "id": "43e499ec-235b-4993-b5c4-490eaee93f12",
+      "name": "Set Confirmed = Yes (changed mind)",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l0XnGJfEosKL4HxW",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        1392
+      ],
+      "id": "f01fd687-69d6-44eb-af1f-b931c77a21ed",
+      "name": "Clear Redis State3",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "phoneNumber"
+            },
+            {
+              "name": "messageBody"
+            },
+            {
+              "name": "confirmState"
+            },
+            {
+              "name": "bookingInfo"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2000,
+        1008
+      ],
+      "id": "af7dbb3f-b0cf-4685-a9a8-e219e83063be",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -816,
+        32
+      ],
+      "id": "1f74d748-864a-4b23-a768-a085ce5d0177",
+      "name": "Daily 8AM Reminder Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ================================================================\n// FIXED: Calculate Blocked Time to Remove\n// Uses data from Parse Intent node (via bookingInfo from Redis)\n// ================================================================\n\nconst parseIntent = $('Parse Intent').first().json;\nconst bookingInfo = parseIntent.bookingInfo;\nconst phoneNumber = parseIntent.phoneNumber;\n\n// Extract data from bookingInfo (stored when reminder was sent)\nconst employeeID = bookingInfo.employeeID;\nconst bookingTimeRaw = bookingInfo.bookingTime;\nconst duration = bookingInfo.duration || 45;\nconst rowNumber = bookingInfo.rowNumber;\nconst service = bookingInfo.service;\nconst technician = bookingInfo.technician;\n\n// Parse the booking time\nlet dateStr, hourNum, minuteNum;\n\nif (bookingTimeRaw.includes('T')) {\n  // ISO format\n  const dt = new Date(bookingTimeRaw);\n  dateStr = dt.toISOString().split('T')[0];\n  hourNum = dt.getHours();\n  minuteNum = dt.getMinutes();\n} else {\n  // Sheet format: \"1/6/2026 15:00:00\"\n  const [datePart, timePart] = bookingTimeRaw.split(' ');\n  const [month, day, year] = datePart.split('/');\n  const [hour, minute] = timePart.split(':');\n  \n  dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;\n  hourNum = parseInt(hour);\n  minuteNum = parseInt(minute);\n}\n\n// Format start time\nconst period = hourNum >= 12 ? 'PM' : 'AM';\nlet displayHour = hourNum > 12 ? hourNum - 12 : hourNum;\nif (displayHour === 0) displayHour = 12;\nconst startTimeFormatted = `${displayHour}:${String(minuteNum).padStart(2, '0')} ${period}`;\n\n// Calculate end time\nlet endHour = hourNum;\nlet endMinute = minuteNum + duration;\nif (endMinute >= 60) {\n  endHour += Math.floor(endMinute / 60);\n  endMinute = endMinute % 60;\n}\nconst endPeriod = endHour >= 12 ? 'PM' : 'AM';\nlet endDisplayHour = endHour > 12 ? endHour - 12 : endHour;\nif (endDisplayHour === 0) endDisplayHour = 12;\nconst endTimeFormatted = `${endDisplayHour}:${String(endMinute).padStart(2, '0')} ${endPeriod}`;\n\nconst blockedTimeToRemove = `${startTimeFormatted}-${endTimeFormatted}`;\nconst matchKey = `${dateStr}_${employeeID}`;\n\nfunction formatDateForDisplay(dateString) {\n  const date = new Date(dateString + 'T12:00:00');\n  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\n  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];\n  return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;\n}\n\nconst dateFormatted = formatDateForDisplay(dateStr);\n\nconst calendarEventId = bookingInfo.calendarEventId || null;\n\nreturn [{\n  json: {\n    matchKey,\n    blockedTimeToRemove,\n    dateStr,\n    employeeID,\n    row_number: rowNumber,\n    service,\n    technician,\n    startTime: startTimeFormatted,\n    dateFormatted,\n    phoneNumber,\n    calendarEventId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        1184
+      ],
+      "id": "eedc2c9a-9b1b-45ae-a7fd-58beda5b0b9f",
+      "name": "Calculate Blocked Time to Remove"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk",
+          "mode": "list",
+          "cachedResultName": " n8n-amar-nails-dev",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 446414277,
+          "mode": "list",
+          "cachedResultName": "Employee Availability",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1wlDXKDaEkUmdY7LiJ953v5I9uaFZqVltOOCBCrIuGWQ/edit#gid=446414277"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Match Key",
+              "lookupValue": "={{ $json.matchKey }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -240,
+        1184
+      ],
+      "id": "8675752e-81fc-42df-8dd8-fc4276e6134a",
+      "name": "Read Employee Availability Row1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l0XnGJfEosKL4HxW",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const toRemove = $('Calculate Blocked Time to Remove').first().json.blockedTimeToRemove;\nconst currentBlocked = $('Read Employee Availability Row1').first().json['Blocked Times'];\nconst matchKey = $('Calculate Blocked Time to Remove').first().json.matchKey;\nconst phoneNumber = $('Calculate Blocked Time to Remove').first().json.phoneNumber;\n\nif (!currentBlocked || currentBlocked.trim() === '') {\n  return [{ json: { matchKey, updatedBlockedTimes: '', phoneNumber } }];\n}\n\nconst blockedArray = currentBlocked.split(',').map(t => t.trim());\nconst filteredArray = blockedArray.filter(t => t !== toRemove);\nconst updatedBlockedTimes = filteredArray.join(', ');\n\nreturn [{ json: { matchKey, updatedBlockedTimes, removed: toRemove, phoneNumber } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        1184
+      ],
+      "id": "15218bcb-d38f-4860-a77a-c34e33f3b937",
+      "name": "Remove Blocked Time"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk",
+          "mode": "list",
+          "cachedResultName": " n8n-amar-nails-dev",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 446414277,
+          "mode": "list",
+          "cachedResultName": "Employee Availability",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit#gid=446414277"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Blocked Times": "={{ $json.updatedBlockedTimes }}",
+            "Match Key": "={{ $json.matchKey }}"
+          },
+          "matchingColumns": [
+            "Match Key"
+          ],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Employee ID",
+              "displayName": "Employee ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Match Key",
+              "displayName": "Match Key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Employee Name",
+              "displayName": "Employee Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Working Hours",
+              "displayName": "Working Hours",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Blocked Times",
+              "displayName": "Blocked Times",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        96,
+        1184
+      ],
+      "id": "54017166-41e8-405a-ba02-71d393bcafbd",
+      "name": "Update Employee Availability",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l0XnGJfEosKL4HxW",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk",
+          "mode": "list",
+          "cachedResultName": " n8n-amar-nails-dev",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 569810801,
+          "mode": "list",
+          "cachedResultName": "Bookings (Future)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/15-Z9rQxRJvNKlU8ib7Xii6TyqfXGUBpMo2gbDkZmKUk/edit#gid=569810801"
+        },
+        "startIndex": "={{ $('Calculate Blocked Time to Remove').first().json.row_number }}"
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        272,
+        1184
+      ],
+      "id": "65259110-4668-469f-8d5f-c02316bb203b",
+      "name": "Delete Booking Row",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l0XnGJfEosKL4HxW",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Calculate Blocked Time to Remove').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=❌ *Cita Cancelada*\n\n{{ $('Calculate Blocked Time to Remove').first().json.service }} el {{ $('Calculate Blocked Time to Remove').first().json.dateFormatted }} a las {{ $('Calculate Blocked Time to Remove').first().json.startTime }} ha sido cancelada.\n\n¡Esperamos verte pronto! Agenda cuando gustes. 💅",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        704,
+        1184
+      ],
+      "id": "8091f1ad-7c4f-45dd-9c42-fbccb5b11392",
+      "name": "Send Cancel Confirmation",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=confirm_state_{{ $('Calculate Blocked Time to Remove').first().json.phoneNumber }}"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        1376
+      ],
+      "id": "768b2e26-9fdb-4ff6-b6a0-7b4b3f03c236",
+      "name": "Clear Redis State After Cancel",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -816,
+        224
+      ],
+      "id": "58975925-49c4-48fa-9257-ccdfb12763eb",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Parse Intent').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=⚠️ *¿Estás seguro que quieres cancelar tu cita?*\n\nResponde *CANCEL* para confirmar la cancelación.\nSi cambias de opinión, responde *YES* para confirmar tu cita.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        752
+      ],
+      "id": "47f30b76-09c1-4b19-991a-869d50745727",
+      "name": "Send Cancel Prompt",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Parse Intent').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=🤔 No entendí tu respuesta.\n\nPor favor responde:\n✅ *YES* para confirmar tu cita\n❌ *NO* para cancelar",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        976
+      ],
+      "id": "ce9ce910-16b3-4d1b-881a-2e1b7a898dc4",
+      "name": "Resend YES/NO Prompt",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Parse Intent').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=✅ *¡Cita Confirmada!*\n\nGracias por confirmar. ¡Te esperamos! 💅✨",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        16,
+        1392
+      ],
+      "id": "67705305-6cd9-40eb-81e3-a1eacc0aa14e",
+      "name": "Send Confirmed Msg2",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Parse Intent').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=🤔 No entendí tu respuesta.\n\nSi deseas cancelar, responde *CANCEL*.\nSi cambias de opinión, responde *YES* para confirmar.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        1648
+      ],
+      "id": "36d156ef-702d-484d-8c1f-3c25c3530ec1",
+      "name": "Resend CANCEL Prompt",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const phoneNumber = $('Parse Intent').first().json.phoneNumber;\nconst bookingTime = $('Parse Intent').first().json.bookingInfo.bookingTime;\n\nreturn [{\n  json: {\n    phoneNumber,\n    bookingTime,\n    updateData: {\n      'Booking Confirmed': 'Yes'\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        544
+      ],
+      "id": "65d23c67-0ae0-4c45-95b7-d51959f708e7",
+      "name": "Find Exact Booking Row"
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=🗓️ {{ $json.firstBooking.reminderType === 'day_of' ? '*Último Recordatorio*' : '*Recordatorio de Cita*' }}\n\nHola {{ $json.firstBooking['Client Name'] }}!\n\nTienes una cita {{ $json.firstBooking.urgency }}:\n\n📅 {{ $json.firstBooking.formattedDate }}\n⏰ {{ $json.firstBooking.formattedTime }}\n💅 {{ $json.firstBooking['Booking Type'] }}\n👩‍🎨 {{ $json.firstBooking['Nail Technician'] || 'Por asignar' }}\n\n{{ $json.totalCount > 1 ? '📋 *Tienes ' + $json.totalCount + ' citas pendientes*\\n\\n' : '' }}Por favor responde:\n✅ *SI* para confirmar\n❌ *NO* para cancelar",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        784,
+        16
+      ],
+      "id": "c40bcfcd-fbbd-41ae-87c8-1c5983eae88c",
+      "name": "Send Reminder",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Group Bookings By Phone - outputs one item per phone number\nconst items = $input.all();\nconst byPhone = {};\n\nfor (const item of items) {\n  const phone = item.json.phoneNumber;\n  if (!byPhone[phone]) byPhone[phone] = [];\n  byPhone[phone].push(item.json);\n}\n\nreturn Object.entries(byPhone).map(([phone, bookings]) => {\n  // Sort by booking time (earliest first)\n  bookings.sort((a, b) => new Date(a['Booking Time']) - new Date(b['Booking Time']));\n  return {\n    json: {\n      phoneNumber: phone,\n      firstBooking: bookings[0],\n      queuedBookings: bookings.slice(1),\n      totalCount: bookings.length\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        16
+      ],
+      "id": "8340818e-550f-42a8-8b81-13a9c8b583b4",
+      "name": "Group Bookings By Phone"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare single Redis hash with queue embedded\nconst first = $json.firstBooking;\nconst queued = $json.queuedBookings || [];\n\n// Build allDetails object: { bookingId: bookingInfo, ... }\nconst allDetails = {};\n[first, ...queued].forEach(b => {\n  const info = JSON.parse(b.bookingInfo);\n  allDetails[info.bookingId] = b.bookingInfo;\n});\n\n// Queue = array of bookingIds (excluding first)\nconst queueIds = queued.map(b => JSON.parse(b.bookingInfo).bookingId);\n\nreturn [{\n  json: {\n    phoneNumber: $json.phoneNumber,\n    // For Redis hash\n    state: 'PENDING_CONFIRM',\n    currentBookingId: JSON.parse(first.bookingInfo).bookingId,\n    rowNumber: String(first.rowNumber),\n    bookingInfo: first.bookingInfo,\n    queue: JSON.stringify(queueIds),\n    allDetails: JSON.stringify(allDetails),\n    // For message\n    firstBooking: first,\n    totalCount: $json.totalCount\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        16
+      ],
+      "id": "c76d07c1-baf1-46d8-839b-b21af223fb23",
+      "name": "Prepare Queue Data"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=confirm_state_{{ $json.phoneNumber }}",
+        "value": "={{ { state: $json.state, currentBookingId: $json.currentBookingId, rowNumber: $json.rowNumber, bookingInfo: $json.bookingInfo, queue: $json.queue, allDetails: $json.allDetails } }}",
+        "keyType": "hash",
+        "expire": true,
+        "ttl": 86400
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        592,
+        16
+      ],
+      "id": "762f5d64-002f-48f6-8b78-38716c892018",
+      "name": "Set Redis State With Queue",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        912,
+        672
+      ],
+      "id": "4f2e36cb-c839-4590-9b21-6c9b27525779",
+      "name": "Clear Redis State",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "hget",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}",
+        "field": "allDetails",
+        "propertyName": "allDetails",
+        "options": {}
+      },
+      "type": "@iaconnecto/n8n-nodes-redis-extended.redisExtended",
+      "typeVersion": 1,
+      "position": [
+        336,
+        544
+      ],
+      "id": "cf4733db-c08f-4014-ae56-9cdce9af707b",
+      "name": "Get All Details",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "hget",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}",
+        "field": "queue",
+        "propertyName": "queue",
+        "options": {}
+      },
+      "type": "@iaconnecto/n8n-nodes-redis-extended.redisExtended",
+      "typeVersion": 1,
+      "position": [
+        144,
+        544
+      ],
+      "id": "8be00ccc-1237-43f2-8428-3058ecf1b542",
+      "name": "Get Queue From Redis",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-more-condition",
+              "leftValue": "={{ $json.hasMore }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        544
+      ],
+      "id": "84b68139-0103-4977-b395-2359b2a9b60f",
+      "name": "Has More In Queue?"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=confirm_state_{{ $json.phoneNumber }}",
+        "value": "={{ { state: 'PENDING_CONFIRM', currentBookingId: $json.nextBookingId, rowNumber: $json.nextRowNumber, bookingInfo: $json.nextBookingInfo, queue: $json.remainingQueue, allDetails: $json.allDetails } }}",
+        "keyType": "hash",
+        "expire": true,
+        "ttl": 86400
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        912,
+        464
+      ],
+      "id": "82e35037-961b-4c85-9217-72765d932062",
+      "name": "Update Redis With Next",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Process Queue').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=✅ *¡Cita Confirmada!*\n\nTambién tienes otra cita pendiente:\n\n📅 {{ $('Process Queue').first().json.date }}\n⏰ {{ $('Process Queue').first().json.time }}\n💅 {{ $('Process Queue').first().json.service }}\n👩‍🎨 {{ $('Process Queue').first().json.technician || 'Por asignar' }}\n\n¿Confirmas esta cita también?\nResponde *SI* o *NO*",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        464
+      ],
+      "id": "114013cf-8a48-4f3d-bf8f-29696193b8cc",
+      "name": "Send Next Reminder",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Parse Intent').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=✅ *¡Cita Confirmada!*\n\nGracias por confirmar. ¡Te esperamos! 💅✨",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        672
+      ],
+      "id": "b6987603-a5e5-4519-99bd-595cfab824ec",
+      "name": "Send Confirmed Msg",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Queue - check if more bookings exist and prepare next one\nconst phone = $('Parse Intent').first().json.phoneNumber;\nconst queueStr = $('Get Queue From Redis').first().json.queue || '[]';\nconst allDetailsStr = $('Get All Details').first().json.allDetails || '{}';\n\nlet queue = [];\nlet allDetails = {};\ntry {\n  queue = JSON.parse(queueStr);\n  allDetails = JSON.parse(allDetailsStr);\n} catch(e) {\n  // If parsing fails, treat as empty\n}\n\nif (queue.length === 0) {\n  // No more bookings in queue\n  return [{ json: { phoneNumber: phone, hasMore: false } }];\n}\n\n// Pop first from queue (shift removes and returns first element)\nconst nextBookingId = queue.shift();\nconst nextBookingInfoStr = allDetails[nextBookingId];\n\nlet nextInfo = {};\ntry {\n  nextInfo = JSON.parse(nextBookingInfoStr || '{}');\n} catch(e) {}\n\nreturn [{\n  json: {\n    phoneNumber: phone,\n    hasMore: true,\n    nextBookingId,\n    nextBookingInfo: nextBookingInfoStr,\n    nextRowNumber: String(nextInfo.rowNumber),\n    remainingQueue: JSON.stringify(queue),\n    allDetails: allDetailsStr,\n    // For message template\n    service: nextInfo.service,\n    time: nextInfo.time,\n    date: nextInfo.date,\n    technician: nextInfo.technician,\n    clientName: nextInfo.clientName\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        544
+      ],
+      "id": "f61f874d-6e64-47ef-be65-87074b005b1b",
+      "name": "Process Queue"
+    },
+    {
+      "parameters": {
+        "operation": "hget",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}",
+        "field": "queue",
+        "propertyName": "queue",
+        "options": {}
+      },
+      "type": "@iaconnecto/n8n-nodes-redis-extended.redisExtended",
+      "typeVersion": 1,
+      "position": [
+        896,
+        1184
+      ],
+      "id": "70c6caf6-9c14-4fbd-90ea-1f456f8c3243",
+      "name": "Get Queue From Redis (Cancel)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "hget",
+        "key": "=confirm_state_{{ $('Parse Intent').first().json.phoneNumber }}",
+        "field": "allDetails",
+        "propertyName": "allDetails",
+        "options": {}
+      },
+      "type": "@iaconnecto/n8n-nodes-redis-extended.redisExtended",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        1184
+      ],
+      "id": "095b9d61-80e6-487e-ab60-fa4484b46580",
+      "name": "Get All Details  (Cancel)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Queue - check if more bookings exist and prepare next one\nconst phone = $('Parse Intent').first().json.phoneNumber;\nconst queueStr = $('Get Queue From Redis (Cancel)').first().json.queue || '[]';\nconst allDetailsStr = $('Get All Details  (Cancel)').first().json.allDetails || '{}';\n\nlet queue = [];\nlet allDetails = {};\ntry {\n  queue = JSON.parse(queueStr);\n  allDetails = JSON.parse(allDetailsStr);\n} catch(e) {\n  // If parsing fails, treat as empty\n}\n\nif (queue.length === 0) {\n  // No more bookings in queue\n  return [{ json: { phoneNumber: phone, hasMore: false } }];\n}\n\n// Pop first from queue (shift removes and returns first element)\nconst nextBookingId = queue.shift();\nconst nextBookingInfoStr = allDetails[nextBookingId];\n\nlet nextInfo = {};\ntry {\n  nextInfo = JSON.parse(nextBookingInfoStr || '{}');\n} catch(e) {}\n\nreturn [{\n  json: {\n    phoneNumber: phone,\n    hasMore: true,\n    nextBookingId,\n    nextBookingInfo: nextBookingInfoStr,\n    nextRowNumber: String(nextInfo.rowNumber),\n    remainingQueue: JSON.stringify(queue),\n    allDetails: allDetailsStr,\n    // For message template\n    service: nextInfo.service,\n    time: nextInfo.time,\n    date: nextInfo.date,\n    technician: nextInfo.technician,\n    clientName: nextInfo.clientName\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        1184
+      ],
+      "id": "b0150f16-af37-44c9-b894-2824120557e9",
+      "name": "Process Queue  (Cancel)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-more-condition",
+              "leftValue": "={{ $json.hasMore }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1472,
+        1184
+      ],
+      "id": "e4d426a6-3b2d-42a3-94d4-ad1f0fa02a80",
+      "name": "Has More In Queue?  (Cancel)"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=confirm_state_{{ $json.phoneNumber }}",
+        "value": "={{ { state: 'PENDING_CONFIRM', currentBookingId: $json.nextBookingId, rowNumber: $json.nextRowNumber, bookingInfo: $json.nextBookingInfo, queue: $json.remainingQueue, allDetails: $json.allDetails } }}",
+        "keyType": "hash",
+        "expire": true,
+        "ttl": 86400
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1664,
+        1072
+      ],
+      "id": "f95f427b-4b60-4ec4-8bcb-1c4d643a5e3e",
+      "name": "Update Redis With Next (Cancel)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "={{ $('Calculate Blocked Time to Remove').first().json.phoneNumber }}",
+        "toWhatsapp": true,
+        "message": "=✅ *¡Cita Confirmada!*\n\nTambién tienes otra cita pendiente:\n\n📅 {{ $('Process Queue  (Cancel)').first().json.date }}\n⏰ {{ $('Process Queue  (Cancel)').first().json.time }}\n💅 {{ $('Process Queue  (Cancel)').first().json.service }}\n👩‍🎨 {{ $('Process Queue  (Cancel)').first().json.technician || 'Por asignar' }}\n\n¿Confirmas esta cita también?\nResponde *SI* o *NO*",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1856,
+        1072
+      ],
+      "id": "3965f474-bb43-4bfd-a935-d1cea405bfed",
+      "name": "Send Next Reminder (Cancel)",
+      "credentials": {
+        "twilioApi": {
+          "id": "cnl6Zys0eztBWfnJ",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "792fb924ea7c7755c7ce627c71143fd669fff3fb4c11324a28bdb064d1766438@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Zen Nails"
+        },
+        "eventId": "={{ $('Calculate Blocked Time to Remove').first().json.calendarEventId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        480,
+        1184
+      ],
+      "id": "87dc1fa3-6276-4c32-b546-f6b7004cf18b",
+      "name": "Delete Calendar Event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "lTiifUkUkBg6fzLt",
+          "name": "Google Calendar account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Calculate Tomorrow": {
+      "main": [
+        [
+          {
+            "node": "Get Future Bookings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Future Bookings": {
+      "main": [
+        [
+          {
+            "node": "Filter Tomorrow Unconfirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Tomorrow Unconfirmed": {
+      "main": [
+        [
+          {
+            "node": "Has Bookings?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Bookings?": {
+      "main": [
+        [
+          {
+            "node": "Group Bookings By Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Row Number": {
+      "main": [
+        [
+          {
+            "node": "Get Booking Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Booking Info": {
+      "main": [
+        [
+          {
+            "node": "Parse Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Intent": {
+      "main": [
+        [
+          {
+            "node": "Route by State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by State": {
+      "main": [
+        [
+          {
+            "node": "Route YES/NO",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route CANCEL/YES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route YES/NO": {
+      "main": [
+        [
+          {
+            "node": "Find Exact Booking Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Redis PENDING_CANCEL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resend YES/NO Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Exact Booking Row": {
+      "main": [
+        [
+          {
+            "node": "Set Confirmed = Yes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Confirmed = Yes": {
+      "main": [
+        [
+          {
+            "node": "Get Queue From Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis PENDING_CANCEL": {
+      "main": [
+        [
+          {
+            "node": "Send Cancel Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route CANCEL/YES": {
+      "main": [
+        [
+          {
+            "node": "Calculate Blocked Time to Remove",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Confirmed = Yes (changed mind)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resend CANCEL Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Confirmed = Yes (changed mind)": {
+      "main": [
+        [
+          {
+            "node": "Clear Redis State3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Redis State3": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmed Msg2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Get Row Number",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 8AM Reminder Trigger": {
+      "main": [
+        [
+          {
+            "node": "Calculate Tomorrow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Blocked Time to Remove": {
+      "main": [
+        [
+          {
+            "node": "Read Employee Availability Row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Employee Availability Row1": {
+      "main": [
+        [
+          {
+            "node": "Remove Blocked Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Blocked Time": {
+      "main": [
+        [
+          {
+            "node": "Update Employee Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Employee Availability": {
+      "main": [
+        [
+          {
+            "node": "Delete Booking Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Booking Row": {
+      "main": [
+        [
+          {
+            "node": "Delete Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Cancel Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Get Queue From Redis (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Calculate Tomorrow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group Bookings By Phone": {
+      "main": [
+        [
+          {
+            "node": "Prepare Queue Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Queue Data": {
+      "main": [
+        [
+          {
+            "node": "Set Redis State With Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Redis State With Queue": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Redis State": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmed Msg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Details": {
+      "main": [
+        [
+          {
+            "node": "Process Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Queue From Redis": {
+      "main": [
+        [
+          {
+            "node": "Get All Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has More In Queue?": {
+      "main": [
+        [
+          {
+            "node": "Update Redis With Next",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clear Redis State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Redis With Next": {
+      "main": [
+        [
+          {
+            "node": "Send Next Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Queue": {
+      "main": [
+        [
+          {
+            "node": "Has More In Queue?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Queue From Redis (Cancel)": {
+      "main": [
+        [
+          {
+            "node": "Get All Details  (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Details  (Cancel)": {
+      "main": [
+        [
+          {
+            "node": "Process Queue  (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Queue  (Cancel)": {
+      "main": [
+        [
+          {
+            "node": "Has More In Queue?  (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has More In Queue?  (Cancel)": {
+      "main": [
+        [
+          {
+            "node": "Update Redis With Next (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clear Redis State After Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Redis With Next (Cancel)": {
+      "main": [
+        [
+          {
+            "node": "Send Next Reminder (Cancel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Send Cancel Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f113f07b-05d3-470d-95d8-c758f0a8d419",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "kDwF9EEhYLEqaDuf",
+  "tags": []
+}

@@ -10,32 +10,53 @@
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-600, -100],
-      "id": "sn-wf8",
+      "position": [
+        0,
+        0
+      ],
+      "id": "eb30be7a-e492-4696-a34c-19a8fc3d666b",
       "name": "WF8 Overview"
     },
     {
       "parameters": {
-        "workflowInputs": { "values": [{ "name": "leadId" }, { "name": "rejectionReason" }, { "name": "customNote" }] }
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            },
+            {
+              "name": "rejectionReason"
+            },
+            {
+              "name": "customNote"
+            }
+          ]
+        }
       },
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [-200, 200],
-      "id": "wf8-trigger",
+      "position": [
+        400,
+        304
+      ],
+      "id": "4c682aac-2719-4fac-99df-47ec43297c03",
       "name": "Called from WF4"
     },
     {
       "parameters": {
         "operation": "get",
         "key": "=leadstate_{{ $json.leadId }}",
-        "keyType": "hash"
+        "keyType": "hash",
+        "options": {}
       },
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [40, 200],
-      "id": "get-lead-wf8",
-      "name": "Get Lead State",
-      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+      "position": [
+        640,
+        304
+      ],
+      "id": "a413ec51-d024-4ef6-b9f9-c268bf5c0c44",
+      "name": "Get Lead State"
     },
     {
       "parameters": {
@@ -43,31 +64,43 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [280, 200],
-      "id": "prep-rejection",
+      "position": [
+        880,
+        304
+      ],
+      "id": "9ace8f04-1777-4b40-9ecf-f8cfed758143",
       "name": "Prep Rejection Context"
     },
     {
       "parameters": {
+        "text": "=Rejection reason: {{ $json.rejectionReason }}\nCustom note from admin: {{ $json.customNote }}\nClient name: {{ $json.firstName }}\nFinancial goals: {{ $json.financialGoals }}\nAsset range: {{ $json.investableAssets }}",
         "options": {
           "systemMessage": "You compose rejection/nurture emails for NorthStar Wealth Advisory, a financial advisory firm. Output email body ONLY as plain text — no JSON, no markdown.\n\n## REJECTION TYPES AND TONE\n\n### below_threshold_on_review\nTone: Nurturing. \"We'd love to work with you in the future.\"\nInclude: 2-3 free resources relevant to their goals. Invitation to reconnect.\n- Retirement → link to retirement calculator\n- Tax → CRA resources\n- General → Wealthsimple Invest, Financial Planning Standards Council\n\n### not_a_fit\nTone: Redirecting. \"We want to make sure you get the right help.\"\nInclude: 1-2 alternative suggestions. Debt management → credit counseling referral.\n\n### incomplete_info\nTone: Inviting. \"We'd love to learn more.\"\nInclude: Clear call-to-action to reply or resubmit.\n\n### other\nTone: Gracious. Generic thank-you with open door.\n\n## RULES\n- First name greeting only\n- Maximum 120 words\n- NEVER mention AI, scoring, algorithms, or internal processes\n- NEVER be specific about why rejected\n- Always end with forward-looking positive note\n- Plain text only"
-        },
-        "text": "=Rejection reason: {{ $json.rejectionReason }}\nCustom note from admin: {{ $json.customNote }}\nClient name: {{ $json.firstName }}\nFinancial goals: {{ $json.financialGoals }}\nAsset range: {{ $json.investableAssets }}"
+        }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [520, 200],
-      "id": "rejection-composer",
+      "position": [
+        1120,
+        304
+      ],
+      "id": "f4c473af-238e-4df5-bab0-620ad74d5793",
       "name": "Rejection Email Composer"
     },
     {
-      "parameters": { "modelName": "models/gemini-2.5-flash", "options": { "temperature": 0.4 } },
+      "parameters": {
+        "options": {
+          "temperature": 0.4
+        }
+      },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
-      "position": [520, 420],
-      "id": "gemini-rejection",
-      "name": "Gemini (Rejection)",
-      "credentials": { "googleGeminiApi": { "id": "YOUR_GEMINI_CRED_ID", "name": "Google Gemini" } }
+      "position": [
+        1088,
+        496
+      ],
+      "id": "86348e62-1086-4bb5-8956-9bd456923282",
+      "name": "Gemini (Rejection)"
     },
     {
       "parameters": {
@@ -75,8 +108,11 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [800, 200],
-      "id": "build-rejection-email",
+      "position": [
+        1488,
+        288
+      ],
+      "id": "1cc56bb7-5fb4-4dd1-a393-284b5d6c2e1b",
       "name": "Build Email"
     },
     {
@@ -88,10 +124,13 @@
       },
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [1040, 200],
-      "id": "send-rejection",
+      "position": [
+        1728,
+        288
+      ],
+      "id": "e1ddc60f-8949-4270-ad0e-bc4ca30307ec",
       "name": "Send Rejection Email",
-      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+      "webhookId": "d3f2568b-5672-435f-bfee-4472c397f430"
     },
     {
       "parameters": {
@@ -102,17 +141,22 @@
       },
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [1280, 200],
-      "id": "redis-rejection-sent",
-      "name": "Mark Rejection Sent",
-      "credentials": { "redis": { "id": "YOUR_REDIS_CRED_ID", "name": "Redis" } }
+      "position": [
+        1968,
+        288
+      ],
+      "id": "b3264ad2-aacf-4b3e-9170-306467ef3083",
+      "name": "Mark Rejection Sent"
     },
     {
       "parameters": {},
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [800, 420],
-      "id": "wf8-error",
+      "position": [
+        1408,
+        528
+      ],
+      "id": "3f2966a5-55b2-4bff-a02f-f7dcc3e845cf",
       "name": "Catch WF8 Errors"
     },
     {
@@ -121,8 +165,11 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1040, 420],
-      "id": "fallback-email",
+      "position": [
+        1648,
+        528
+      ],
+      "id": "6628819a-6437-48f5-9f83-e4acff6987b7",
       "name": "Fallback Template"
     },
     {
@@ -134,27 +181,150 @@
       },
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [1280, 420],
-      "id": "send-fallback",
+      "position": [
+        1888,
+        528
+      ],
+      "id": "2a2ab304-9db2-49b4-bb24-0398b16c8b94",
       "name": "Send Fallback Email",
-      "credentials": { "gmailOAuth2": { "id": "YOUR_GMAIL_CRED_ID", "name": "Gmail" } }
+      "webhookId": "ed30050a-22b6-499f-867f-2911b15068f7"
     }
   ],
+  "pinData": {},
   "connections": {
-    "Called from WF4": { "main": [[{ "node": "Get Lead State", "type": "main", "index": 0 }]] },
-    "Get Lead State": { "main": [[{ "node": "Prep Rejection Context", "type": "main", "index": 0 }]] },
-    "Prep Rejection Context": { "main": [[{ "node": "Rejection Email Composer", "type": "main", "index": 0 }]] },
-    "Rejection Email Composer": { "main": [[{ "node": "Build Email", "type": "main", "index": 0 }]] },
-    "Gemini (Rejection)": { "ai_languageModel": [[{ "node": "Rejection Email Composer", "type": "ai_languageModel", "index": 0 }]] },
-    "Build Email": { "main": [[{ "node": "Send Rejection Email", "type": "main", "index": 0 }]] },
-    "Send Rejection Email": { "main": [[{ "node": "Mark Rejection Sent", "type": "main", "index": 0 }]] },
-    "Catch WF8 Errors": { "main": [[{ "node": "Fallback Template", "type": "main", "index": 0 }]] },
-    "Fallback Template": { "main": [[{ "node": "Send Fallback Email", "type": "main", "index": 0 }]] }
+    "Called from WF4": {
+      "main": [
+        [
+          {
+            "node": "Get Lead State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead State": {
+      "main": [
+        [
+          {
+            "node": "Prep Rejection Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Rejection Context": {
+      "main": [
+        [
+          {
+            "node": "Rejection Email Composer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rejection Email Composer": {
+      "main": [
+        [
+          {
+            "node": "Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Rejection)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Rejection Email Composer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email": {
+      "main": [
+        [
+          {
+            "node": "Send Rejection Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Rejection Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Rejection Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF8 Errors": {
+      "main": [
+        [
+          {
+            "node": "Fallback Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback Template": {
+      "main": [
+        [
+          {
+            "node": "Send Fallback Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
-  "versionId": "wf8-rejection-v1",
-  "meta": { "instanceId": "northstar-pipeline" },
-  "id": "wf8-rejection-email",
-  "tags": [{ "name": "northstar" }, { "name": "rejection" }, { "name": "ai" }]
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ec80c9f4-8416-4227-9f89-1f1bcbd25fd5",
+  "meta": {
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "F4ZRJbdHVKvYnh5v",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:07:35.000Z",
+      "updatedAt": "2026-02-24T16:07:35.000Z",
+      "id": "L8MFcuwh4FQTsc9w",
+      "name": "rejection"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:04:19.497Z",
+      "updatedAt": "2026-02-24T16:04:19.497Z",
+      "id": "hVCyWUtCK6xEiHiC",
+      "name": "ai"
+    }
+  ]
 }

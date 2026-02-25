@@ -1,0 +1,717 @@
+{
+  "name": "WF11 - Pre-Meeting Nurture Email Drafts",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF11: PRE-MEETING NURTURE EMAIL DRAFTS\n\n**Purpose:** AI reads the WF10 consultation prep brief and drafts a personalized rapport-building email to the prospective client BEFORE their first meeting. The advisor reviews the draft on the dashboard and chooses Send or Dismiss.\n\n**Triggers:**\n1. Called by WF10 after prep brief is generated (leadId input)\n2. Webhook: POST /webhook/api/nurture/approve — dashboard sends approval\n3. Webhook: POST /webhook/api/nurture/dismiss — dashboard sends dismissal\n\n**Flow:**\n- WF10 completes → calls WF11 with leadId\n- AI reads prep brief + lead data → generates warm, personalized email draft\n- Draft saved to Airtable: nurtureEmailDraft, nurtureEmailSubject, nurtureEmailStatus=PENDING_REVIEW\n- Dashboard shows draft with Send / Dismiss buttons\n- Send → returns mailto: link so advisor's native email client opens with pre-filled draft\n- Dismiss → marks DISMISSED in Airtable\n\n**The human always sends the email themselves.** AI drafts, human edits and sends.",
+        "height": 520,
+        "width": 620,
+        "color": 4
+      },
+      "id": "sn-wf11",
+      "name": "WF11 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            },
+            {
+              "name": "briefJson"
+            },
+            {
+              "name": "clientName"
+            },
+            {
+              "name": "clientEmail"
+            },
+            {
+              "name": "advisorName"
+            },
+            {
+              "name": "advisorId"
+            },
+            {
+              "name": "appointmentDatetime"
+            }
+          ]
+        }
+      },
+      "id": "wf11-trigger",
+      "name": "Called from WF10",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-load-lead",
+      "name": "Load Lead + Brief",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        448,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('Called from WF10').first().json;\nconst record = $('Load Lead + Brief').first().json;\nconst fields = record.fields || record;\n\n// Parse the prep brief\nlet brief = {};\ntry {\n  const briefRaw = trigger.briefJson || fields.consultationPrepBrief || '{}';\n  brief = typeof briefRaw === 'string' ? JSON.parse(briefRaw) : briefRaw;\n} catch(e) { brief = {}; }\n\nconst apptDate = trigger.appointmentDatetime || fields.appointmentDatetime;\nlet formattedDate = 'your upcoming consultation';\nlet formattedTime = '';\nif (apptDate) {\n  const d = new Date(apptDate);\n  formattedDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });\n  formattedTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });\n}\n\nreturn [{ json: {\n  leadId: fields.leadId || trigger.leadId,\n  airtableRecordId: record.id,\n  clientName: fields.fullName || trigger.clientName,\n  clientFirstName: (fields.fullName || trigger.clientName || '').split(' ')[0],\n  clientEmail: fields.email || trigger.clientEmail,\n  advisorName: fields.assignedAdvisorName || trigger.advisorName,\n  advisorId: fields.assignedAdvisorId || trigger.advisorId,\n  appointmentDatetime: apptDate,\n  formattedDate,\n  formattedTime,\n  province: fields.province || '',\n  investableAssets: fields.investableAssets || '',\n  financialGoals: fields.financialGoals || '',\n  investmentTimeline: fields.investmentTimeline || '',\n  riskTolerance: fields.riskTolerance || '',\n  currentAdvisorSituation: fields.currentAdvisorSituation || '',\n  freeText: fields.freeText || '',\n  // Prep brief sections for the AI\n  executiveSummary: brief.executiveSummary || '',\n  financialSnapshot: brief.financialSnapshot || {},\n  goalAnalysis: brief.goalAnalysis || [],\n  clientPsychologyNotes: brief.clientPsychologyNotes || {},\n  competitiveIntelligence: brief.competitiveIntelligence || '',\n  documentsToRequest: brief.documentsToRequest || []\n} }];"
+      },
+      "id": "wf11-build-prompt",
+      "name": "Build Nurture Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Draft a pre-meeting rapport-building email from {{ $json.advisorName }} to {{ $json.clientFirstName }}.\n\n## CLIENT CONTEXT\nFull Name: {{ $json.clientName }}\nProvince: {{ $json.province }}\nAssets: {{ $json.investableAssets }}\nGoals: {{ $json.financialGoals }}\nTimeline: {{ $json.investmentTimeline }}\nRisk Tolerance: {{ $json.riskTolerance }}\nAdvisor Situation: {{ $json.currentAdvisorSituation }}\nClient's Own Words: {{ $json.freeText }}\n\n## FROM THE PREP BRIEF\nExecutive Summary: {{ $json.executiveSummary }}\nFinancial Snapshot: {{ JSON.stringify($json.financialSnapshot) }}\nGoal Analysis: {{ JSON.stringify($json.goalAnalysis) }}\nClient Psychology: {{ JSON.stringify($json.clientPsychologyNotes) }}\nCompetitive Intel: {{ $json.competitiveIntelligence }}\nDocuments to Request: {{ JSON.stringify($json.documentsToRequest) }}\n\n## MEETING DETAILS\nDate: {{ $json.formattedDate }}\nTime: {{ $json.formattedTime }} ET\nAdvisor: {{ $json.advisorName }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a senior relationship manager at NorthStar Wealth Advisory drafting personalized pre-meeting emails. These emails go out 24-48 hours before a first consultation to build rapport and set the stage for a productive meeting.\n\n## YOUR GOAL\nMake the client feel like their advisor has ALREADY invested time in understanding their situation. This is the first personal touchpoint — it sets the tone for the entire relationship. The client should think: \"This person actually read my file.\"\n\n## TONE\n- Warm but professional. Not salesy. Not stiff.\n- Like a thoughtful colleague who happens to be great with money.\n- Show genuine intellectual curiosity about their financial situation.\n- Mirror the sophistication level of their asset range (don't talk down to a $500K+ client).\n\n## WHAT TO INCLUDE\n1. **Personal acknowledgment** — Reference something specific from their intake (goals, situation, or free text). NOT generic.\n2. **Light insight** — One or two observations that show you've thought about their situation. Not full advice, but enough to signal competence. E.g., \"Given your timeline and the current rate environment, I think we'll have some interesting options to explore around [specific topic].\"\n3. **What to expect** — Brief preview of what the consultation will cover, framed as collaborative (\"I'd love to explore...\" not \"I will tell you...\").\n4. **Gentle ask** — If there are documents that would make the meeting more productive, mention 1-2 (not a laundry list). Frame as optional: \"If you have X handy, it would help us hit the ground running.\"\n5. **Warm close** — Genuine-sounding, not corporate.\n\n## WHAT TO AVOID\n- Generic platitudes (\"We're committed to your financial success\")\n- Anything that sounds like a template\n- Giving actual financial advice (compliance issue)\n- Mentioning risk flags or sensitive observations from the prep brief\n- Being too long — this should be 200-350 words, readable in 90 seconds\n- Using the client's asset numbers or income explicitly (privacy)\n- Overpromising outcomes\n\n## OUTPUT SCHEMA (JSON only)\n{\n  \"subject\": \"Email subject line — personal, not corporate. Use their first name.\",\n  \"body\": \"The full email body as plain text. Use line breaks for paragraphs. Sign off as the advisor. Include advisor name and 'NorthStar Wealth Advisory' in signature.\",\n  \"internalNotes\": \"1-2 sentences for the advisor explaining the strategic angle of this email — what rapport-building goal it serves and what response signals to watch for.\"\n}\n\n## RULES\n- Subject line MUST include the client's first name\n- Body must reference at least ONE specific detail from their intake or prep brief\n- Body must mention the meeting date/time\n- Sign off with the advisor's actual name\n- Output ONLY valid JSON"
+        }
+      },
+      "id": "wf11-agent",
+      "name": "Nurture Email Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        928,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-pro-preview",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "id": "wf11-gemini",
+      "name": "Gemini 2.5 Flash (Nurture)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        864,
+        640
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{ \"type\": \"object\", \"properties\": { \"subject\": { \"type\": \"string\" }, \"body\": { \"type\": \"string\" }, \"internalNotes\": { \"type\": \"string\" } }, \"required\": [\"subject\", \"body\", \"internalNotes\"] }"
+      },
+      "id": "wf11-schema",
+      "name": "Nurture Draft Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        1072,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $('Nurture Email Agent').first().json;\nconst context = $('Build Nurture Prompt').first().json;\n\nconst draft = agentOutput.output\n  ? (typeof agentOutput.output === 'string' ? JSON.parse(agentOutput.output) : agentOutput.output)\n  : agentOutput;\n\nreturn [{ json: {\n  leadId: context.leadId,\n  airtableRecordId: context.airtableRecordId,\n  clientName: context.clientName,\n  clientEmail: context.clientEmail,\n  advisorName: context.advisorName,\n  subject: draft.subject || `Looking forward to our conversation, ${context.clientFirstName}`,\n  body: draft.body || '',\n  internalNotes: draft.internalNotes || '',\n  nurtureEmailStatus: 'PENDING_REVIEW'\n} }];"
+      },
+      "id": "wf11-process",
+      "name": "Process Draft Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-find-record",
+      "name": "Find Lead for Update",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1408,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "nurtureEmailDraft": "={{ $('Process Draft Output').first().json.body }}",
+            "nurtureEmailSubject": "={{ $('Process Draft Output').first().json.subject }}",
+            "nurtureEmailStatus": "PENDING_REVIEW"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf11-save-draft",
+      "name": "Save Draft to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1648,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/nurture/approve",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf11-approve-webhook",
+      "name": "Approve Nurture Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        976
+      ],
+      "webhookId": "2b7c79e8-b2df-45f1-99a4-f44000d141fe"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.body.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-get-approved",
+      "name": "Get Approved Draft",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        976
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const record = $input.first().json;\nconst fields = record.fields || record;\nconst leadId = $('Approve Nurture Email').first().json.body.leadId;\n\nconst clientEmail = fields.email || '';\nconst subject = fields.nurtureEmailSubject || '';\nconst body = fields.nurtureEmailDraft || '';\n\n// Build mailto link for the frontend to open native email client\nconst mailtoLink = `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;\n\nreturn [{ json: {\n  leadId: fields.leadId || leadId,\n  airtableRecordId: record.id,\n  clientEmail,\n  subject,\n  body,\n  mailtoLink,\n  success: true\n} }];"
+      },
+      "id": "wf11-build-mailto",
+      "name": "Build mailto Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Build mailto Response').first().json.airtableRecordId }}",
+            "nurtureEmailStatus": "APPROVED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf11-mark-approved",
+      "name": "Mark Approved in Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        976
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, mailtoLink: $('Build mailto Response').first().json.mailtoLink, subject: $('Build mailto Response').first().json.subject, body: $('Build mailto Response').first().json.body, clientEmail: $('Build mailto Response').first().json.clientEmail }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "wf11-respond-approve",
+      "name": "Return mailto Link",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/nurture/dismiss",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf11-dismiss-webhook",
+      "name": "Dismiss Nurture Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        1216
+      ],
+      "webhookId": "66d10094-ba5e-49da-b0ac-1e7a5bf48b81"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.body.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-get-dismissed",
+      "name": "Get Dismissed Lead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        1216
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "nurtureEmailStatus": "DISMISSED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf11-mark-dismissed",
+      "name": "Mark Dismissed in Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        1216
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, status: 'DISMISSED' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "wf11-respond-dismiss",
+      "name": "Return Dismiss Ack",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        1216
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "wf11-error-trigger",
+      "name": "Catch WF11 Errors",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        928,
+        1424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorData = $input.first().json;\nreturn [{ json: { error: errorData, action: 'NURTURE_DRAFT_FAILED', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "wf11-error-handler",
+      "name": "Handle Nurture Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        1424
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called from WF10": {
+      "main": [
+        [
+          {
+            "node": "Load Lead + Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Lead + Brief": {
+      "main": [
+        [
+          {
+            "node": "Build Nurture Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Nurture Prompt": {
+      "main": [
+        [
+          {
+            "node": "Nurture Email Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nurture Email Agent": {
+      "main": [
+        [
+          {
+            "node": "Process Draft Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash (Nurture)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Nurture Email Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nurture Draft Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Nurture Email Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Draft Output": {
+      "main": [
+        [
+          {
+            "node": "Find Lead for Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead for Update": {
+      "main": [
+        [
+          {
+            "node": "Save Draft to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Draft": {
+      "main": [
+        [
+          {
+            "node": "Build mailto Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build mailto Response": {
+      "main": [
+        [
+          {
+            "node": "Mark Approved in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Approved in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Return mailto Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dismiss Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Get Dismissed Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Dismissed Lead": {
+      "main": [
+        [
+          {
+            "node": "Mark Dismissed in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Dismissed in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Return Dismiss Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF11 Errors": {
+      "main": [
+        [
+          {
+            "node": "Handle Nurture Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0662553e-6328-4eff-a4b2-98557befc9ae",
+  "meta": {
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "pD0jBk6n4k3HXT3W",
+  "tags": []
+}

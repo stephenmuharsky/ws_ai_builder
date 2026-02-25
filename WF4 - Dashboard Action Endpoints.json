@@ -1,0 +1,982 @@
+{
+  "name": "WF4 - Dashboard Action Endpoints",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF4: DASHBOARD ACTION ENDPOINTS\n\n4 POST endpoints. Dashboard reads Airtable directly.\nNo Redis for lead state — Airtable is source of truth.\n\n1. POST /api/leads/approve → APPROVED\n2. POST /api/leads/reject → REJECTED\n3. POST /api/leads/override → PENDING_ENRICHMENT\n4. POST /api/leads/request-info → AWAITING_INFO",
+        "height": 300,
+        "width": 480,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -96
+      ],
+      "id": "sn-overview",
+      "name": "WF4 Overview"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/leads/approve",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        304
+      ],
+      "id": "approve-webhook",
+      "name": "POST /api/leads/approve",
+      "webhookId": "approve-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{ json: {\n  leadId: body.leadId,\n  assignedAdvisorId: body.assignedAdvisorId || '',\n  assignedAdvisorName: body.assignedAdvisorName || '',\n  approvedAt: new Date().toISOString()\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        304
+      ],
+      "id": "process-approval",
+      "name": "Process Approval"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        304
+      ],
+      "id": "find-approve",
+      "name": "Find Lead (Approve)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const approval = $('Process Approval').first().json;\nconst record = $('Find Lead (Approve)').first().json;\nif (!record || !record.id) throw new Error('Lead not found: ' + approval.leadId);\nreturn [{ json: {\n  id: record.id,\n  status: 'APPROVED',\n  assignedAdvisorId: approval.assignedAdvisorId,\n  assignedAdvisorName: approval.assignedAdvisorName,\n  approvedAt: approval.approvedAt\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        304
+      ],
+      "id": "prep-approve",
+      "name": "Prep Approve Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "={{ $json.status }}",
+            "assignedAdvisorId": "={{ $json.assignedAdvisorId }}",
+            "assignedAdvisorName": "={{ $json.assignedAdvisorName }}",
+            "approvedAt": "={{ $json.approvedAt }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1072,
+        304
+      ],
+      "id": "update-approve",
+      "name": "Update Lead (Approve)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Process Approval').first().json.leadId, status: 'APPROVED' }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        304
+      ],
+      "id": "respond-approve",
+      "name": "Return 200 (Approve)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/leads/reject",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        608
+      ],
+      "id": "reject-webhook",
+      "name": "POST /api/leads/reject",
+      "webhookId": "reject-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{ json: {\n  leadId: body.leadId,\n  rejectionReason: body.rejectionReason || 'other',\n  rejectedAt: new Date().toISOString()\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        608
+      ],
+      "id": "parse-reject",
+      "name": "Parse Reject"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        608
+      ],
+      "id": "find-reject",
+      "name": "Find Lead (Reject)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rej = $('Parse Reject').first().json;\nconst record = $('Find Lead (Reject)').first().json;\nif (!record || !record.id) throw new Error('Lead not found: ' + rej.leadId);\nreturn [{ json: {\n  id: record.id,\n  status: 'REJECTED',\n  rejectionReason: rej.rejectionReason,\n  rejectedAt: rej.rejectedAt\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        608
+      ],
+      "id": "prep-reject",
+      "name": "Prep Reject Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "={{ $json.status }}",
+            "rejectionReason": "={{ $json.rejectionReason }}",
+            "rejectedAt": "={{ $json.rejectedAt }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1072,
+        608
+      ],
+      "id": "update-reject",
+      "name": "Update Lead (Reject)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Parse Reject').first().json.leadId, status: 'REJECTED' }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        608
+      ],
+      "id": "respond-reject",
+      "name": "Return 200 (Reject)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/leads/override",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        912
+      ],
+      "id": "override-webhook",
+      "name": "POST /api/leads/override",
+      "webhookId": "override-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{ json: {\n  leadId: body.leadId,\n  overrideReason: body.overrideReason || ''\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        912
+      ],
+      "id": "parse-override",
+      "name": "Parse Override"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        912
+      ],
+      "id": "find-override",
+      "name": "Find Lead (Override)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ovr = $('Parse Override').first().json;\nconst record = $('Find Lead (Override)').first().json;\nif (!record || !record.id) throw new Error('Lead not found: ' + ovr.leadId);\nreturn [{ json: {\n  id: record.id,\n  status: 'PENDING_ENRICHMENT',\n  overrideReason: ovr.overrideReason,\n  disqualificationReason: ''\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        912
+      ],
+      "id": "prep-override",
+      "name": "Prep Override Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "={{ $json.status }}",
+            "overrideReason": "={{ $json.overrideReason }}",
+            "disqualificationReason": ""
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1072,
+        912
+      ],
+      "id": "update-override",
+      "name": "Update Lead (Override)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Parse Override').first().json.leadId, status: 'PENDING_ENRICHMENT' }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        912
+      ],
+      "id": "respond-override",
+      "name": "Return 200 (Override)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/leads/request-info",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        1200
+      ],
+      "id": "info-webhook",
+      "name": "POST /api/leads/request-info",
+      "webhookId": "info-wh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{ json: {\n  leadId: body.leadId,\n  followUpQuestion: body.followUpQuestion || ''\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        1200
+      ],
+      "id": "parse-info",
+      "name": "Parse Info Request"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        1200
+      ],
+      "id": "find-info",
+      "name": "Find Lead (Info)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const info = $('Parse Info Request').first().json;\nconst record = $('Find Lead (Info)').first().json;\nif (!record || !record.id) throw new Error('Lead not found: ' + info.leadId);\nreturn [{ json: {\n  id: record.id,\n  status: 'AWAITING_INFO'\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        1200
+      ],
+      "id": "prep-info",
+      "name": "Prep Info Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1072,
+        1200
+      ],
+      "id": "update-info",
+      "name": "Update Lead (Info)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Parse Info Request').first().json.leadId, status: 'AWAITING_INFO' }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        1200
+      ],
+      "id": "respond-info",
+      "name": "Return 200 (Info)"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "gWXc9hPm86WTrwK0",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Process Approval').first().json.leadId }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "trigger-wf5",
+      "name": "Trigger WF5 - Outreach",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1312,
+        192
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "POST /api/leads/approve": {
+      "main": [
+        [
+          {
+            "node": "Process Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Approval": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (Approve)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (Approve)": {
+      "main": [
+        [
+          {
+            "node": "Prep Approve Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Approve Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Approve)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Approve)": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Approve)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger WF5 - Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/leads/reject": {
+      "main": [
+        [
+          {
+            "node": "Parse Reject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Reject": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (Reject)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (Reject)": {
+      "main": [
+        [
+          {
+            "node": "Prep Reject Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Reject Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Reject)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Reject)": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Reject)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/leads/override": {
+      "main": [
+        [
+          {
+            "node": "Parse Override",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Override": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (Override)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (Override)": {
+      "main": [
+        [
+          {
+            "node": "Prep Override Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Override Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Override)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Override)": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Override)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/leads/request-info": {
+      "main": [
+        [
+          {
+            "node": "Parse Info Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Info Request": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (Info)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (Info)": {
+      "main": [
+        [
+          {
+            "node": "Prep Info Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Info Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Info)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Info)": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Info)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "790fb06e-10e4-47c8-b190-173eeae80f1a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "MkzvczPKsuNrKsIe",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:05:09.732Z",
+      "updatedAt": "2026-02-24T16:05:09.732Z",
+      "id": "Kusn0e6WPJoSHRPV",
+      "name": "api"
+    },
+    {
+      "createdAt": "2026-02-24T16:05:09.746Z",
+      "updatedAt": "2026-02-24T16:05:09.746Z",
+      "id": "cWcjBVRiNynJ3mC7",
+      "name": "dashboard"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    }
+  ]
+}
