@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+dist/
+*.md
+!README.md
+.claude/
+CANCUN NAILS MAIN*.json
+Booking Confirmation System*.json

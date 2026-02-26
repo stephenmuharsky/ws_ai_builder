@@ -1,0 +1,361 @@
+{
+  "name": "WF8 - Rejection Email Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF8: REJECTION EMAIL GENERATION\n\n**Trigger:** Called by WF4 when admin rejects a lead\n\n**AI generates personalized rejection/nurture email based on reason:**\n- below_threshold_on_review → Nurturing tone, free resources\n- not_a_fit → Redirecting tone, alternative suggestions\n- incomplete_info → Inviting tone, request more info\n- other → Gracious general response\n\n**Max 120 words. Never mention AI or scoring.**",
+        "height": 300,
+        "width": 480,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "eb30be7a-e492-4696-a34c-19a8fc3d666b",
+      "name": "WF8 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            },
+            {
+              "name": "rejectionReason"
+            },
+            {
+              "name": "customNote"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        304
+      ],
+      "id": "4c682aac-2719-4fac-99df-47ec43297c03",
+      "name": "Called from WF4"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "keyType": "hash",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        640,
+        304
+      ],
+      "id": "a413ec51-d024-4ef6-b9f9-c268bf5c0c44",
+      "name": "Get Lead State",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Called from WF4').first().json;\nconst lead = $('Get Lead State').first().json;\n\nreturn [{ json: {\n  leadId: input.leadId,\n  email: lead.email,\n  fullName: lead.fullName,\n  firstName: (lead.fullName || '').split(' ')[0],\n  rejectionReason: input.rejectionReason,\n  customNote: input.customNote || '',\n  financialGoals: lead.financialGoals || '',\n  investableAssets: lead.investableAssets || ''\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        304
+      ],
+      "id": "9ace8f04-1777-4b40-9ecf-f8cfed758143",
+      "name": "Prep Rejection Context"
+    },
+    {
+      "parameters": {
+        "text": "=Rejection reason: {{ $json.rejectionReason }}\nCustom note from admin: {{ $json.customNote }}\nClient name: {{ $json.firstName }}\nFinancial goals: {{ $json.financialGoals }}\nAsset range: {{ $json.investableAssets }}",
+        "options": {
+          "systemMessage": "You compose rejection/nurture emails for NorthStar Wealth Advisory, a financial advisory firm. Output email body ONLY as plain text — no JSON, no markdown.\n\n## REJECTION TYPES AND TONE\n\n### below_threshold_on_review\nTone: Nurturing. \"We'd love to work with you in the future.\"\nInclude: 2-3 free resources relevant to their goals. Invitation to reconnect.\n- Retirement → link to retirement calculator\n- Tax → CRA resources\n- General → Wealthsimple Invest, Financial Planning Standards Council\n\n### not_a_fit\nTone: Redirecting. \"We want to make sure you get the right help.\"\nInclude: 1-2 alternative suggestions. Debt management → credit counseling referral.\n\n### incomplete_info\nTone: Inviting. \"We'd love to learn more.\"\nInclude: Clear call-to-action to reply or resubmit.\n\n### other\nTone: Gracious. Generic thank-you with open door.\n\n## RULES\n- First name greeting only\n- Maximum 120 words\n- NEVER mention AI, scoring, algorithms, or internal processes\n- NEVER be specific about why rejected\n- Always end with forward-looking positive note\n- Plain text only"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1120,
+        304
+      ],
+      "id": "f4c473af-238e-4df5-bab0-620ad74d5793",
+      "name": "Rejection Email Composer"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        496
+      ],
+      "id": "86348e62-1086-4bb5-8956-9bd456923282",
+      "name": "Gemini (Rejection)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build email with appropriate subject based on rejection type\nconst context = $('Prep Rejection Context').first().json;\nconst aiBody = $('Rejection Email Composer').first().json.output || $('Rejection Email Composer').first().json.text || '';\n\nconst subjectMap = {\n  'below_threshold_on_review': 'Resources to help you on your financial journey',\n  'not_a_fit': 'Some recommendations for your financial goals',\n  'incomplete_info': \"We'd love to learn more\",\n  'other': 'Thank you for your interest'\n};\n\nconst subject = (subjectMap[context.rejectionReason] || subjectMap['other']) + ' — NorthStar Wealth Advisory';\n\nreturn [{ json: {\n  to: context.email,\n  subject,\n  body: aiBody,\n  leadId: context.leadId\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        304
+      ],
+      "id": "1cc56bb7-5fb4-4dd1-a393-284b5d6c2e1b",
+      "name": "Build Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1632,
+        304
+      ],
+      "id": "e1ddc60f-8949-4270-ad0e-bc4ca30307ec",
+      "name": "Send Rejection Email",
+      "webhookId": "d3f2568b-5672-435f-bfee-4472c397f430",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $('Build Email').first().json.leadId }}",
+        "value": "={{ JSON.stringify({ rejectionEmailSentAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1856,
+        304
+      ],
+      "id": "b3264ad2-aacf-4b3e-9170-306467ef3083",
+      "name": "Mark Rejection Sent",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        1408,
+        528
+      ],
+      "id": "3f2966a5-55b2-4bff-a02f-f7dcc3e845cf",
+      "name": "Catch WF8 Errors"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fallback: send generic rejection template on AI failure\nconst context = $('Prep Rejection Context').first().json;\nreturn [{ json: {\n  to: context.email,\n  subject: 'Thank you for your interest — NorthStar Wealth Advisory',\n  body: `Hi ${context.firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory. We appreciate you sharing your financial goals with us.\\n\\nAt this time, we believe you may be better served by resources that more closely align with your current needs. Here are some excellent options:\\n\\n- Wealthsimple Invest (wealthsimple.com)\\n- Financial Planning Standards Council (fpsc.ca)\\n\\nShould your circumstances change, we'd love to hear from you again.\\n\\nWarm regards,\\nNorthStar Wealth Advisory`,\n  leadId: context.leadId\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        528
+      ],
+      "id": "6628819a-6437-48f5-9f83-e4acff6987b7",
+      "name": "Fallback Template"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1888,
+        528
+      ],
+      "id": "2a2ab304-9db2-49b4-bb24-0398b16c8b94",
+      "name": "Send Fallback Email",
+      "webhookId": "ed30050a-22b6-499f-867f-2911b15068f7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called from WF4": {
+      "main": [
+        [
+          {
+            "node": "Get Lead State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead State": {
+      "main": [
+        [
+          {
+            "node": "Prep Rejection Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Rejection Context": {
+      "main": [
+        [
+          {
+            "node": "Rejection Email Composer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rejection Email Composer": {
+      "main": [
+        [
+          {
+            "node": "Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (Rejection)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Rejection Email Composer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email": {
+      "main": [
+        [
+          {
+            "node": "Send Rejection Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Rejection Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Rejection Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF8 Errors": {
+      "main": [
+        [
+          {
+            "node": "Fallback Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback Template": {
+      "main": [
+        [
+          {
+            "node": "Send Fallback Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b167bca6-0d5d-4b49-80f7-c8d0e5bf828f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "F4ZRJbdHVKvYnh5v",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:07:35.000Z",
+      "updatedAt": "2026-02-24T16:07:35.000Z",
+      "id": "L8MFcuwh4FQTsc9w",
+      "name": "rejection"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:04:19.497Z",
+      "updatedAt": "2026-02-24T16:04:19.497Z",
+      "id": "hVCyWUtCK6xEiHiC",
+      "name": "ai"
+    }
+  ]
+}

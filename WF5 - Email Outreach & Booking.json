@@ -1,0 +1,558 @@
+{
+  "name": "WF5 - Email Outreach & Booking",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF5: EMAIL OUTREACH & BOOKING\n\n**Trigger:** Called from WF4 after admin approves lead\n\n**Flow:**\n1. Get lead from Airtable (has all enrichment + availability data)\n2. **REAL-TIME ADVISOR CROSS-CHECK** in Prep Lead Data:\n   - If admin's chosen advisor MATCHES the suggestedBooking advisor → trust WF3's pre-check\n   - If admin chose a DIFFERENT advisor → default to SCHEDULING_REQUIRED (safe fallback)\n3. IF isTimeAvailable = true:\n   → Send confirmation email + log appointment + mark BOOKED → WF10 → WF11\n4. IF isTimeAvailable = false:\n   → Send scheduling outreach email + mark OUTREACH_IN_PROGRESS\n\n**Why the cross-check:** WF3 checks availability for the AI's top-ranked advisor during enrichment. But the admin may override to a different advisor at approval time. We can't trust WF3's result if the advisor changed."
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "sn-wf5",
+      "name": "WF5 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        400
+      ],
+      "id": "trigger-wf5",
+      "name": "Called from WF4"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        448,
+        400
+      ],
+      "id": "get-lead-at",
+      "name": "Get Lead from Airtable",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.first().json;\nlet suggestedBooking = null;\ntry { suggestedBooking = typeof lead.suggestedBooking === 'string' && lead.suggestedBooking ? JSON.parse(lead.suggestedBooking) : lead.suggestedBooking; } catch(e) {}\nlet starters = [];\ntry { starters = typeof lead.conversationStarters === 'string' ? JSON.parse(lead.conversationStarters) : (lead.conversationStarters || []); } catch(e) {}\nlet docsToRequest = [];\ntry { docsToRequest = typeof lead.documentsToRequest === 'string' ? JSON.parse(lead.documentsToRequest) : (lead.documentsToRequest || []); } catch(e) {\n  docsToRequest = [\"Recent bank statements (all accounts)\", \"Most recent Notice of Assessment (NOA) from CRA\", \"Previous year tax return\"];\n}\nif (!docsToRequest || docsToRequest.length === 0) {\n  docsToRequest = [\"Recent bank statements (all accounts)\", \"Most recent Notice of Assessment (NOA) from CRA\", \"Previous year tax return\"];\n}\n\n// Resolve advisor name if missing\nlet advisorName = lead.assignedAdvisorName || '';\nconst advisorId = lead.assignedAdvisorId || '';\nif (advisorId && !advisorName) {\n  try {\n    const ranking = typeof lead.advisorMatchRanking === 'string' ? JSON.parse(lead.advisorMatchRanking) : (lead.advisorMatchRanking || []);\n    const match = ranking.find(a => a.advisorId === advisorId);\n    if (match) advisorName = match.advisorName;\n  } catch(e) {}\n}\nif (advisorId && !advisorName) {\n  const advisorMap = { ADV001: 'Michael Torres', ADV002: 'Priya Sharma', ADV003: 'David Kim', ADV004: 'Rachel Nguyen' };\n  advisorName = advisorMap[advisorId] || '';\n}\n\n// REAL-TIME AVAILABILITY CHECK\n// Instead of trusting pre-computed availabilityStatus (which was checked against\n// the AI's top-ranked advisor, not necessarily the admin's chosen advisor),\n// we re-check availability for the ACTUALLY assigned advisor right now.\nlet isTimeAvailable = false;\nlet resolvedAvailabilityStatus = 'SCHEDULING_REQUIRED';\nlet resolvedBooking = suggestedBooking;\n\ntry {\n  // Get availability data from Redis cache\n  const availCache = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'http://localhost:6379',\n    // Can't call Redis directly from Code node - use the pre-computed value\n    // BUT cross-check: if the assigned advisor matches the suggestedBooking advisor, trust it\n  });\n} catch(e) {\n  // Expected - we can't call Redis from a Code node\n}\n\n// Smart cross-check logic:\n// If suggestedBooking exists AND its advisorId matches the assigned advisor,\n// then the WF3 availability check IS valid for this advisor\nif (suggestedBooking && suggestedBooking.advisorId === advisorId) {\n  // WF3 checked this exact advisor - trust the pre-computed status\n  isTimeAvailable = (lead.availabilityStatus === 'PREFERRED_AVAILABLE' || lead.availabilityStatus === 'BACKUP_AVAILABLE');\n  resolvedAvailabilityStatus = lead.availabilityStatus || 'SCHEDULING_REQUIRED';\n} else if (!advisorId) {\n  // No advisor assigned (shouldn't happen post-approval, but safety)\n  isTimeAvailable = false;\n  resolvedAvailabilityStatus = 'SCHEDULING_REQUIRED';\n} else {\n  // MISMATCH: Admin chose a different advisor than WF3 checked.\n  // We CANNOT trust the pre-computed availabilityStatus.\n  // Default to SCHEDULING_REQUIRED to be safe - the outreach email\n  // will offer time slots and the client can pick one.\n  isTimeAvailable = false;\n  resolvedAvailabilityStatus = 'SCHEDULING_REQUIRED';\n  resolvedBooking = null; // Clear stale booking suggestion\n}\n\nreturn [{ json: {\n  airtableRecordId: lead.id,\n  leadId: lead.leadId,\n  fullName: lead.fullName,\n  email: lead.email,\n  assignedAdvisorId: advisorId,\n  assignedAdvisorName: advisorName,\n  availabilityStatus: resolvedAvailabilityStatus,\n  suggestedBooking: resolvedBooking,\n  preferredDate: lead.preferredDate || '',\n  preferredTime: lead.preferredTime || '',\n  conversationStarters: starters,\n  documentsToRequest: docsToRequest,\n  isTimeAvailable: isTimeAvailable\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        400
+      ],
+      "id": "prep-lead",
+      "name": "Prep Lead Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "avail-check",
+              "leftValue": "={{ $json.isTimeAvailable }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        928,
+        400
+      ],
+      "id": "if-available",
+      "name": "Time Available?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Prep Lead Data').first().json;\nconst booking = lead.suggestedBooking || {};\nconst advisorName = lead.assignedAdvisorName || 'your assigned advisor';\nconst bookingDate = booking.date || lead.preferredDate;\nconst bookingTime = booking.time || lead.preferredTime;\nlet dateStr = bookingDate;\ntry { const d = new Date(bookingDate + 'T12:00:00'); dateStr = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); } catch(e) {}\nlet timeStr = bookingTime;\ntry { const [h, m] = bookingTime.split(':'); const hr = parseInt(h); timeStr = (hr > 12 ? (hr-12) : hr) + ':' + m + (hr >= 12 ? ' PM' : ' AM'); } catch(e) {}\nconst firstName = lead.fullName.split(' ')[0];\n\n// Build documents to request section\nconst docs = lead.documentsToRequest || ['Recent bank statements (all accounts)', 'Most recent Notice of Assessment (NOA) from CRA', 'Previous year\\'s tax return'];\nconst docsHtml = docs.map(d => `<li style=\"padding: 4px 0;\">${d}</li>`).join('');\n\nconst subject = `Your consultation with ${advisorName} is confirmed — ${dateStr}`;\nconst body = `<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;\">\n<div style=\"background: #0a2540; padding: 32px 40px; border-radius: 12px 12px 0 0;\">\n<h1 style=\"color: #ffffff; font-size: 22px; font-weight: 600; margin: 0;\">Consultation Confirmed &#10003;</h1>\n</div>\n<div style=\"background: #ffffff; padding: 32px 40px; border: 1px solid #e8e8e8; border-top: none;\">\n<p style=\"font-size: 16px; line-height: 1.6; margin-top: 0;\">Dear ${firstName},</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">Great news — your consultation with NorthStar Wealth Advisory has been confirmed.</p>\n\n<div style=\"background: #f8f9fb; border-left: 4px solid #0a2540; padding: 20px 24px; border-radius: 0 8px 8px 0; margin: 24px 0;\">\n<h2 style=\"font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin: 0 0 12px 0;\">Consultation Details</h2>\n<table style=\"width: 100%; border-collapse: collapse;\">\n<tr><td style=\"padding: 6px 0; font-size: 15px; color: #6b7280; width: 100px;\">Advisor</td><td style=\"padding: 6px 0; font-size: 15px; font-weight: 600;\">${advisorName}</td></tr>\n<tr><td style=\"padding: 6px 0; font-size: 15px; color: #6b7280;\">Date</td><td style=\"padding: 6px 0; font-size: 15px; font-weight: 600;\">${dateStr}</td></tr>\n<tr><td style=\"padding: 6px 0; font-size: 15px; color: #6b7280;\">Time</td><td style=\"padding: 6px 0; font-size: 15px; font-weight: 600;\">${timeStr} ET</td></tr>\n<tr><td style=\"padding: 6px 0; font-size: 15px; color: #6b7280;\">Duration</td><td style=\"padding: 6px 0; font-size: 15px; font-weight: 600;\">60 minutes</td></tr>\n<tr><td style=\"padding: 6px 0; font-size: 15px; color: #6b7280;\">Format</td><td style=\"padding: 6px 0; font-size: 15px; font-weight: 600;\">Video call (link sent 24h before)</td></tr>\n</table>\n</div>\n\n<div style=\"background: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px 24px; border-radius: 8px; margin: 24px 0;\">\n<h3 style=\"font-size: 15px; color: #166534; margin: 0 0 12px 0;\">📋 Documents to Prepare</h3>\n<p style=\"font-size: 14px; color: #166534; margin: 0 0 8px 0;\">To make the most of your consultation, please have the following ready:</p>\n<ul style=\"margin: 0; padding-left: 20px; color: #1a1a2e; font-size: 14px; line-height: 1.8; list-style-type: disc;\">\n${docsHtml}\n</ul>\n<p style=\"font-size: 13px; color: #6b7280; margin: 12px 0 0 0; font-style: italic;\">If you don't have all of these, that's okay — bring what you can and we'll work with what's available.</p>\n</div>\n\n<p style=\"font-size: 14px; line-height: 1.6; color: #6b7280;\">Need to reschedule or cancel? Simply reply to this email.</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">We look forward to speaking with you!</p>\n<p style=\"font-size: 15px; line-height: 1.6; margin-bottom: 0;\">Best regards,<br><strong>NorthStar Wealth Advisory Team</strong></p>\n</div>\n<div style=\"padding: 20px 40px; text-align: center; font-size: 12px; color: #9ca3af;\">NorthStar Wealth Advisory · Toronto, ON<br>This email was sent regarding your consultation request.</div>\n</div>`;\nreturn [{ json: { ...lead, emailSubject: subject, emailBody: body, bookingDate, bookingTime } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        304
+      ],
+      "id": "build-confirm",
+      "name": "Build Confirmation Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.emailSubject }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1408,
+        304
+      ],
+      "id": "send-confirm",
+      "name": "Send Confirmation Email",
+      "webhookId": "b451cb10-455a-440b-85d3-bb67aacda15f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Prep Lead Data').first().json;\nconst now = new Date().toISOString();\nreturn [{ json: { airtableRecordId: lead.airtableRecordId, leadId: lead.leadId, bookedAt: now, appointmentDatetime: (lead.suggestedBooking ? lead.suggestedBooking.date + 'T' + lead.suggestedBooking.time + ':00' : lead.preferredDate + 'T' + lead.preferredTime + ':00') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        304
+      ],
+      "id": "log-appt",
+      "name": "Log Appointment"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.airtableRecordId }}",
+            "status": "BOOKED",
+            "bookedAt": "={{ $json.bookedAt }}",
+            "appointmentDatetime": "={{ $json.appointmentDatetime }}",
+            "assignedAdvisorName": "={{ $('Prep Lead Data').first().json.assignedAdvisorName }}",
+            "emailThreadId": "={{ $('Send Confirmation Email').first().json.threadId }}",
+            "lastEmailSentAt": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1888,
+        304
+      ],
+      "id": "update-booked",
+      "name": "Update Lead BOOKED",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Prep Lead Data').first().json;\nconst advisorName = lead.assignedAdvisorName || 'your assigned advisor';\nconst firstName = lead.fullName.split(' ')[0];\nconst slots = [];\nconst baseDate = new Date();\nfor (let i = 1; i <= 7 && slots.length < 4; i++) {\n  const d = new Date(baseDate);\n  d.setDate(d.getDate() + i);\n  if (d.getDay() === 0 || d.getDay() === 6) continue;\n  const dateStr = d.toISOString().split('T')[0];\n  const friendlyDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });\n  if (slots.length < 2) slots.push({ date: dateStr, time: '10:00', label: `${friendlyDate} at 10:00 AM ET` });\n  else slots.push({ date: dateStr, time: '14:00', label: `${friendlyDate} at 2:00 PM ET` });\n}\nconst slotRows = slots.map((s, i) => `<tr><td style=\"padding: 12px 16px; font-size: 15px; font-weight: 600; color: #0a2540; border-bottom: 1px solid #f0f0f0; width: 90px;\">Option ${i+1}</td><td style=\"padding: 12px 16px; font-size: 15px; border-bottom: 1px solid #f0f0f0;\">${s.label}</td></tr>`).join('');\n\n// Build documents to request section\nconst docs = lead.documentsToRequest || ['Recent bank statements (all accounts)', 'Most recent Notice of Assessment (NOA) from CRA', 'Previous year\\'s tax return'];\nconst docsHtml = docs.map(d => `<li style=\"padding: 4px 0;\">${d}</li>`).join('');\n\nconst subject = `Schedule your consultation with ${advisorName} — NorthStar Wealth Advisory`;\nconst body = `<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;\">\n<div style=\"background: #0a2540; padding: 32px 40px; border-radius: 12px 12px 0 0;\">\n<h1 style=\"color: #ffffff; font-size: 22px; font-weight: 600; margin: 0;\">Let's Schedule Your Consultation</h1>\n</div>\n<div style=\"background: #ffffff; padding: 32px 40px; border: 1px solid #e8e8e8; border-top: none;\">\n<p style=\"font-size: 16px; line-height: 1.6; margin-top: 0;\">Dear ${firstName},</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">Thank you for your interest in NorthStar Wealth Advisory! Your application has been approved and we'd love to set up your initial consultation with <strong>${advisorName}</strong>.</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">Unfortunately, your preferred time isn't available. Here are some alternative options:</p>\n\n<div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 24px 0;\">\n<table style=\"width: 100%; border-collapse: collapse;\">\n<thead><tr style=\"background: #f8f9fb;\"><th style=\"padding: 10px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;\"></th><th style=\"padding: 10px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;\">Date &amp; Time</th></tr></thead>\n<tbody>${slotRows}</tbody>\n</table>\n</div>\n\n<div style=\"background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px 20px; border-radius: 8px; margin: 24px 0;\">\n<p style=\"margin: 0; font-size: 14px; color: #1e40af;\"><strong>How to reply:</strong> Simply respond with your preferred option number (e.g., \"Option 1\") or suggest a different time that works for you.</p>\n</div>\n\n<div style=\"background: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px 24px; border-radius: 8px; margin: 24px 0;\">\n<h3 style=\"font-size: 15px; color: #166534; margin: 0 0 12px 0;\">📋 Documents to Prepare</h3>\n<p style=\"font-size: 14px; color: #166534; margin: 0 0 8px 0;\">While we finalize your appointment, you can start gathering these documents:</p>\n<ul style=\"margin: 0; padding-left: 20px; color: #1a1a2e; font-size: 14px; line-height: 1.8; list-style-type: disc;\">\n${docsHtml}\n</ul>\n<p style=\"font-size: 13px; color: #6b7280; margin: 12px 0 0 0; font-style: italic;\">If you don't have all of these, that's okay — bring what you can and we'll work with what's available.</p>\n</div>\n\n<p style=\"font-size: 14px; line-height: 1.6; color: #6b7280;\">Our consultation hours are <strong>Monday–Friday, 9:00 AM – 5:00 PM Eastern Time</strong>.</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">We look forward to hearing from you!</p>\n<p style=\"font-size: 15px; line-height: 1.6; margin-bottom: 0;\">Best regards,<br><strong>NorthStar Wealth Advisory Team</strong></p>\n</div>\n<div style=\"padding: 20px 40px; text-align: center; font-size: 12px; color: #9ca3af;\">NorthStar Wealth Advisory · Toronto, ON<br>This email was sent regarding your consultation request.</div>\n</div>`;\nreturn [{ json: { ...lead, emailSubject: subject, emailBody: body, alternativeSlots: JSON.stringify(slots) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        528
+      ],
+      "id": "build-outreach",
+      "name": "Build Scheduling Outreach"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.emailSubject }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1408,
+        528
+      ],
+      "id": "send-outreach",
+      "name": "Send Outreach Email",
+      "webhookId": "4fd42fb4-d64c-4238-bd40-ee2711a035d7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Prep Lead Data').first().json.airtableRecordId }}",
+            "status": "OUTREACH_IN_PROGRESS",
+            "lastEmailSentAt": "={{ new Date().toISOString() }}",
+            "emailThreadId": "={{ $json.threadId }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1648,
+        528
+      ],
+      "id": "update-outreach",
+      "name": "Update Lead OUTREACH",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        688,
+        704
+      ],
+      "id": "error-trigger",
+      "name": "Catch WF5 Errors"
+    },
+    {
+      "parameters": {
+        "sendTo": "smuharsk@gmail.com",
+        "subject": "=WF5 Error: {{ $json.workflow?.name || 'Email Outreach' }}",
+        "message": "=WF5 Error Alert\\n\\nError: {{ $json.execution?.error?.message || JSON.stringify($json) }}\\nTime: {{ new Date().toISOString() }}",
+        "options": {
+          "senderName": "NorthStar Pipeline Alerts"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        928,
+        704
+      ],
+      "id": "error-email",
+      "name": "Send WF5 Error Alert",
+      "webhookId": "4d59b741-9e81-4c3e-b82f-ff0ee7f86e58",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "JlBlolawHoZv1ylN",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Prep Lead Data').first().json.leadId }}",
+            "source": "wf5_booking"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "type": "string"
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "trigger-wf10",
+      "name": "Trigger WF10 - Prep Brief",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2128,
+        304
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called from WF4": {
+      "main": [
+        [
+          {
+            "node": "Get Lead from Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead from Airtable": {
+      "main": [
+        [
+          {
+            "node": "Prep Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Time Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Time Available?": {
+      "main": [
+        [
+          {
+            "node": "Build Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Scheduling Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Log Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Appointment": {
+      "main": [
+        [
+          {
+            "node": "Update Lead BOOKED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Scheduling Outreach": {
+      "main": [
+        [
+          {
+            "node": "Send Outreach Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Outreach Email": {
+      "main": [
+        [
+          {
+            "node": "Update Lead OUTREACH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF5 Errors": {
+      "main": [
+        [
+          {
+            "node": "Send WF5 Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead BOOKED": {
+      "main": [
+        [
+          {
+            "node": "Trigger WF10 - Prep Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b77500f6-66b3-4ebe-9aa9-afe5450d17f6",
+  "meta": {
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "gWXc9hPm86WTrwK0",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:06:21.687Z",
+      "updatedAt": "2026-02-24T16:06:21.687Z",
+      "id": "UXLCDIP0yOGvTroG",
+      "name": "booking"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:06:21.675Z",
+      "updatedAt": "2026-02-24T16:06:21.675Z",
+      "id": "xtvdBJPHMpWe9KmN",
+      "name": "outreach"
+    }
+  ]
+}

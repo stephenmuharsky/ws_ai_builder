@@ -1,0 +1,857 @@
+{
+  "name": "WF1 - Intake & Auto-Disqualification",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF1: INTAKE FORM WEBHOOK & AUTO-DISQUALIFICATION\n\n**Endpoint:** POST /webhook/intake-form\n\n**Flow:**\n1. Receive form submission from React intake form\n2. Validate all fields (format, required, business hours)\n3. Generate Lead ID (LEAD-YYYYMMDD-XXXX)\n4. Run disqualification rules (deterministic — NO AI)\n5. Route: Disqualified → rejection email + log | Qualified → AI enrichment\n\n**Data Layer:** Airtable (Leads table) + Redis (lead state hash)\n**Disqualification is DETERMINISTIC — no AI involvement.**",
+        "height": 520,
+        "width": 560,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9bcad6c2-be48-44ec-8dc5-7af118040566",
+      "name": "WF1 Overview"
+    },
+    {
+      "parameters": {
+        "content": "### DISQUALIFICATION RULES ENGINE\n\n**Rule 1 — Jurisdiction:** Province must be in firm:config.served_provinces\n**Rule 2 — Minimum Assets:** Mapped numeric value must be >= firm:config.min_assets_threshold\n**Rule 3 — Goal Mismatch:** At least one financialGoal must be in firm:config.offered_goal_types\n\n**Goal comparison normalized (lowercase + underscores).**\n**Router uses disqualificationCount > 0 (avoids boolean coercion).**",
+        "height": 380,
+        "width": 440,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        -96
+      ],
+      "id": "62ae41ee-b619-4257-a7ca-06fa256a0e5d",
+      "name": "Rules Engine Docs"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intake-form",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "GET, POST, OPTIONS"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        400,
+        400
+      ],
+      "id": "619d3e78-6d38-4798-b8c4-7389257b952d",
+      "name": "Intake Form Webhook",
+      "webhookId": "08ca3920-ebb8-4861-b7b4-62186b21be44"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst errors = [];\nconst requiredStrings = ['fullName', 'email', 'phone', 'province', 'investableAssets', 'annualIncome', 'investmentTimeline', 'riskTolerance', 'currentAdvisorSituation', 'preferredDate', 'preferredTime'];\nfor (const field of requiredStrings) {\n  if (!body[field] || String(body[field]).trim() === '') {\n    errors.push(`Missing required field: ${field}`);\n  }\n}\nif (!body.financialGoals || !Array.isArray(body.financialGoals) || body.financialGoals.length === 0) {\n  errors.push('financialGoals must be a non-empty array');\n}\nif (body.consentGiven !== true) {\n  errors.push('consentGiven must be true');\n}\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (body.email && !emailRegex.test(body.email)) {\n  errors.push(`Invalid email format: ${body.email}`);\n}\nif (body.preferredDate) {\n  const pDate = new Date(body.preferredDate + 'T12:00:00');\n  const now = new Date();\n  if (pDate <= now) errors.push('preferredDate must be in the future');\n  const day = pDate.getDay();\n  if (day === 0 || day === 6) errors.push('preferredDate must be a weekday');\n}\nif (body.preferredTime) {\n  const [h, m] = body.preferredTime.split(':').map(Number);\n  if (h < 9 || h >= 17) errors.push('preferredTime must be between 09:00 and 17:00');\n}\nconst validAssets = ['under_25k', '25k_100k', '100k_250k', '250k_500k', '500k_1m', '1m_plus'];\nif (body.investableAssets && !validAssets.includes(body.investableAssets)) {\n  errors.push(`Invalid investableAssets value: ${body.investableAssets}`);\n}\nconst validTimelines = ['under_1yr', '1_3yr', '3_5yr', '5_10yr', '10_plus'];\nif (body.investmentTimeline && !validTimelines.includes(body.investmentTimeline)) {\n  errors.push(`Invalid investmentTimeline value: ${body.investmentTimeline}`);\n}\nconst validRisk = ['conservative', 'moderate', 'aggressive'];\nif (body.riskTolerance && !validRisk.includes(body.riskTolerance)) {\n  errors.push(`Invalid riskTolerance value: ${body.riskTolerance}`);\n}\nreturn [{ json: { valid: errors.length === 0, errors, formData: body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        400
+      ],
+      "id": "a5c7c3ca-985c-469d-88fd-3f49cf60fb22",
+      "name": "Validate Intake Form"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        400
+      ],
+      "id": "a273bf2b-1082-4093-840e-6fe7a925ad74",
+      "name": "Valid?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, errors: $('Validate Intake Form').first().json.errors }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1104,
+        608
+      ],
+      "id": "2fe18f34-f04e-48e0-bda5-bfc18bf657c0",
+      "name": "Return 400"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst rand = String(Math.floor(1000 + Math.random() * 9000));\nconst leadId = `LEAD-${year}${month}${day}-${rand}`;\nconst formData = $('Validate Intake Form').first().json.formData;\nconst goalsStr = Array.isArray(formData.financialGoals) ? formData.financialGoals.join(',') : formData.financialGoals;\nreturn [{ json: { leadId, submittedAt: now.toISOString(), ...formData, financialGoals: goalsStr } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        304
+      ],
+      "id": "9ac34521-5265-48e9-9ff9-7310a40c964c",
+      "name": "Generate Lead ID"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:config",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        304
+      ],
+      "id": "d56231dd-8551-4d2e-ac7b-c632a886e15e",
+      "name": "Get Firm Config",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// DISQUALIFICATION RULES ENGINE — Deterministic, NO AI\nconst lead = $('Generate Lead ID').first().json;\nlet configRaw = $('Get Firm Config').first().json;\nlet config;\nif (typeof configRaw === 'string') { config = JSON.parse(configRaw); }\nelse if (configRaw.data) { config = JSON.parse(configRaw.data); }\nelse { config = configRaw; }\n\nconst reasons = [];\n\n// RULE 1: JURISDICTION\nconst servedProvinces = config.served_provinces || ['ON', 'BC', 'AB', 'QC'];\nif (!servedProvinces.includes(lead.province)) { reasons.push('jurisdiction_not_served'); }\n\n// RULE 2: MINIMUM ASSETS\nconst assetMap = { 'under_25k': 12500, '25k_100k': 62500, '100k_250k': 175000, '250k_500k': 375000, '500k_1m': 750000, '1m_plus': 1500000 };\nconst minThreshold = Number(config.min_assets_threshold) || 100000;\nconst assetValue = assetMap[lead.investableAssets] || 0;\nif (assetValue < minThreshold) { reasons.push('below_asset_threshold'); }\n\n// RULE 3: GOAL MISMATCH — normalize both sides\nfunction normalizeGoal(g) { return g.trim().toLowerCase().replace(/\\s+/g, '_'); }\nlet offeredGoals = config.offered_goal_types || [];\nif (typeof offeredGoals === 'string') { try { offeredGoals = JSON.parse(offeredGoals); } catch(e) { offeredGoals = offeredGoals.split(','); } }\nconst normalizedOffered = offeredGoals.map(normalizeGoal);\nconst goalsArray = lead.financialGoals ? lead.financialGoals.split(',').map(s => s.trim()) : [];\nconst normalizedLeadGoals = goalsArray.map(normalizeGoal);\nconst hasMatchingGoal = normalizedLeadGoals.some(g => normalizedOffered.includes(g));\nif (!hasMatchingGoal) { reasons.push('goal_mismatch'); }\n\nreturn [{ json: { disqualified: reasons.length > 0, disqualificationCount: reasons.length, disqualificationReasons: reasons, leadId: lead.leadId, leadData: lead, assetNumeric: assetValue, config: { servedProvinces, minThreshold, offeredGoals: normalizedOffered } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        304
+      ],
+      "id": "386ad237-deb0-42d8-be0b-6d35a0817167",
+      "name": "Disqualification Rules Engine"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.disqualificationCount }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.disqualificationCount }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gt"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1824,
+        304
+      ],
+      "id": "1c2b3fd1-6fce-44d1-aa1b-b4a3976a3a55",
+      "name": "Disqualification Router"
+    },
+    {
+      "parameters": {
+        "content": "## QUALIFIED PATH",
+        "height": 180,
+        "width": 360,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        48
+      ],
+      "id": "73922dc4-347b-427e-af1f-73f5f9d1041e",
+      "name": "Qualified Path"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Disqualification Rules Engine').first().json;\nconst lead = data.leadData;\nreturn [{ json: { key: `leadstate_${lead.leadId}`, status: 'PENDING_ENRICHMENT', leadId: lead.leadId, fullName: lead.fullName, email: lead.email, phone: lead.phone || '', province: lead.province, investableAssets: lead.investableAssets, annualIncome: lead.annualIncome, financialGoals: lead.financialGoals, investmentTimeline: lead.investmentTimeline, riskTolerance: lead.riskTolerance, currentAdvisorSituation: lead.currentAdvisorSituation, preferredDate: lead.preferredDate || '', preferredTime: lead.preferredTime || '', backupDate: lead.backupDate || '', backupTime: lead.backupTime || '', freeText: lead.freeText || '', submittedAt: lead.submittedAt, followUpCount: '0' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        208
+      ],
+      "id": "e35ee62d-0b0b-44d6-9161-4b7cefde1a95",
+      "name": "Prep Redis State (Qualified)"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $json.key }}",
+        "value": "={{ JSON.stringify($json) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        208
+      ],
+      "id": "4d728149-8298-49d3-902b-4664dec923ab",
+      "name": "Set Lead State (Redis)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Prep Redis State (Qualified)').first().json.leadId }}",
+            "fullName": "={{ $('Prep Redis State (Qualified)').first().json.fullName }}",
+            "email": "={{ $('Prep Redis State (Qualified)').first().json.email }}",
+            "phone": "={{ $('Prep Redis State (Qualified)').first().json.phone }}",
+            "province": "={{ $('Prep Redis State (Qualified)').first().json.province }}",
+            "investableAssets": "={{ $('Prep Redis State (Qualified)').first().json.investableAssets }}",
+            "annualIncome": "={{ $('Prep Redis State (Qualified)').first().json.annualIncome }}",
+            "financialGoals": "={{ $('Prep Redis State (Qualified)').first().json.financialGoals }}",
+            "investmentTimeline": "={{ $('Prep Redis State (Qualified)').first().json.investmentTimeline }}",
+            "riskTolerance": "={{ $('Prep Redis State (Qualified)').first().json.riskTolerance }}",
+            "currentAdvisorSituation": "={{ $('Prep Redis State (Qualified)').first().json.currentAdvisorSituation }}",
+            "preferredDate": "={{ $('Prep Redis State (Qualified)').first().json.preferredDate }}",
+            "preferredTime": "={{ $('Prep Redis State (Qualified)').first().json.preferredTime }}",
+            "backupDate": "={{ $('Prep Redis State (Qualified)').first().json.backupDate }}",
+            "backupTime": "={{ $('Prep Redis State (Qualified)').first().json.backupTime }}",
+            "freeText": "={{ $('Prep Redis State (Qualified)').first().json.freeText }}",
+            "status": "PENDING_ENRICHMENT",
+            "submittedAt": "={{ $('Prep Redis State (Qualified)').first().json.submittedAt }}",
+            "followUpCount": 0
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2560,
+        208
+      ],
+      "id": "99466a2f-c837-4c2f-91de-3fca8ba392e4",
+      "name": "Create Lead in Airtable (Qualified)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Prep Redis State (Qualified)').first().json.leadId, status: 'PENDING_ENRICHMENT', message: 'Your submission has been received. We will be in touch within 1 business day.' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2800,
+        112
+      ],
+      "id": "109c575d-8dca-41a4-8d31-bc5f928d0000",
+      "name": "Return 200 (Qualified)"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HfZqG2gp6J25webY",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/HfZqG2gp6J25webY",
+          "cachedResultName": "WF2 - AI Enrichment Pipeline"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Prep Redis State (Qualified)').first().json.leadId }}"
+          },
+          "matchingColumns": [
+            "leadId"
+          ],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2896,
+        320
+      ],
+      "id": "a62eebd3-2929-4c47-882d-684f087f0bd1",
+      "name": "Trigger WF2 - Enrichment"
+    },
+    {
+      "parameters": {
+        "content": "## DISQUALIFIED PATH",
+        "height": 180,
+        "width": 360,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        480
+      ],
+      "id": "52f5b03f-86b5-4969-b0bf-f161ae97f2e5",
+      "name": "Disqualified Path"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Disqualification Rules Engine').first().json;\nconst lead = data.leadData;\nreturn [{ json: { key: `leadstate_${lead.leadId}`, status: 'DISQUALIFIED', leadId: lead.leadId, fullName: lead.fullName, email: lead.email, phone: lead.phone || '', province: lead.province, investableAssets: lead.investableAssets, annualIncome: lead.annualIncome, financialGoals: lead.financialGoals, investmentTimeline: lead.investmentTimeline, riskTolerance: lead.riskTolerance, currentAdvisorSituation: lead.currentAdvisorSituation, preferredDate: lead.preferredDate || '', preferredTime: lead.preferredTime || '', backupDate: lead.backupDate || '', backupTime: lead.backupTime || '', freeText: lead.freeText || '', submittedAt: lead.submittedAt, disqualificationReasons: data.disqualificationReasons.join(','), followUpCount: '0' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        544
+      ],
+      "id": "f5fe27c4-1bbf-4fe1-8162-17aad7b84998",
+      "name": "Prep Redis State (Disqualified)"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $json.key }}",
+        "value": "={{ JSON.stringify($json) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        544
+      ],
+      "id": "2af2088a-85ec-4430-b3dd-1cc1ad9d24e4",
+      "name": "Set Lead State (Disqualified)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $json.leadId }}",
+            "fullName": "={{ $json.fullName }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "province": "={{ $json.province }}",
+            "investableAssets": "={{ $json.investableAssets }}",
+            "annualIncome": "={{ $json.annualIncome }}",
+            "financialGoals": "={{ $json.financialGoals }}",
+            "investmentTimeline": "={{ $json.investmentTimeline }}",
+            "riskTolerance": "={{ $json.riskTolerance }}",
+            "currentAdvisorSituation": "={{ $json.currentAdvisorSituation }}",
+            "preferredDate": "={{ $json.preferredDate }}",
+            "preferredTime": "={{ $json.preferredTime }}",
+            "backupDate": "={{ $json.backupDate }}",
+            "backupTime": "={{ $json.backupTime }}",
+            "freeText": "={{ $json.freeText }}",
+            "status": "DISQUALIFIED",
+            "disqualificationReason": "={{ $json.disqualificationReasons }}",
+            "submittedAt": "={{ $json.submittedAt }}",
+            "followUpCount": 0
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2560,
+        544
+      ],
+      "id": "8b378ff2-972e-4b82-b71f-a1793fc63a52",
+      "name": "Create Lead in Airtable (Disqualified)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:email_templates",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        544
+      ],
+      "id": "60b248f0-3908-4c61-a8be-d088039b7df9",
+      "name": "Get Email Templates",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Prep Redis State (Disqualified)').first().json;\nlet templatesRaw = $('Get Email Templates').first().json;\nlet templates;\nif (typeof templatesRaw === 'string') templates = JSON.parse(templatesRaw);\nelse if (templatesRaw.data) templates = JSON.parse(templatesRaw.data);\nelse templates = templatesRaw;\nconst tpl = templates.disqualification || { subject: 'Thank you for your interest', body: 'Thank you for reaching out.' };\nconst firstName = lead.fullName.split(' ')[0];\nlet subject = tpl.subject.replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nlet body = tpl.body.replace(/\\{\\{first_name\\}\\}/g, firstName).replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nreturn [{ json: { to: lead.email, subject, body, leadId: lead.leadId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        544
+      ],
+      "id": "4434f3ce-39ac-4f07-ac64-cea260fe2ea9",
+      "name": "Build Rejection Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3280,
+        544
+      ],
+      "id": "ed5725dc-0af7-42a3-bbb1-7ae17a6c4d38",
+      "name": "Send Rejection Email",
+      "webhookId": "25a8c74a-6252-42a3-ad8c-09ff163f139b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Prep Redis State (Disqualified)').first().json.leadId, message: 'Your submission has been received. We will be in touch within 1 business day.' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3536,
+        544
+      ],
+      "id": "c4e82997-6b16-423e-9c16-1040325eec6e",
+      "name": "Return 200 (Disqualified)"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        800
+      ],
+      "id": "c527def4-863f-419d-b9ac-f3e5e84a57b2",
+      "name": "Catch WF1 Errors"
+    },
+    {
+      "parameters": {
+        "sendTo": "admin@northstarwealth.ca",
+        "subject": "WF1 Intake Error - NorthStar Pipeline",
+        "message": "=Intake workflow error at {{ $now.toISO() }}\n\nError: {{ $json.error?.message || JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2320,
+        800
+      ],
+      "id": "13c78b89-c737-4b01-a11b-2ccc26e0fb7c",
+      "name": "Send WF1 Error Alert",
+      "webhookId": "db05face-4a16-4cbd-87c0-7ef4c162df7b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Intake Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Intake Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Intake Form": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Generate Lead ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Lead ID": {
+      "main": [
+        [
+          {
+            "node": "Get Firm Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Firm Config": {
+      "main": [
+        [
+          {
+            "node": "Disqualification Rules Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disqualification Rules Engine": {
+      "main": [
+        [
+          {
+            "node": "Disqualification Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disqualification Router": {
+      "main": [
+        [
+          {
+            "node": "Prep Redis State (Qualified)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Redis State (Disqualified)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Redis State (Qualified)": {
+      "main": [
+        [
+          {
+            "node": "Set Lead State (Redis)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Lead State (Redis)": {
+      "main": [
+        [
+          {
+            "node": "Create Lead in Airtable (Qualified)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Lead in Airtable (Qualified)": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Qualified)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger WF2 - Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Redis State (Disqualified)": {
+      "main": [
+        [
+          {
+            "node": "Set Lead State (Disqualified)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Lead State (Disqualified)": {
+      "main": [
+        [
+          {
+            "node": "Create Lead in Airtable (Disqualified)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Lead in Airtable (Disqualified)": {
+      "main": [
+        [
+          {
+            "node": "Get Email Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Email Templates": {
+      "main": [
+        [
+          {
+            "node": "Build Rejection Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rejection Email": {
+      "main": [
+        [
+          {
+            "node": "Send Rejection Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Rejection Email": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Disqualified)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF1 Errors": {
+      "main": [
+        [
+          {
+            "node": "Send WF1 Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "47ce49e7-76ed-44d9-ba0f-6e05d9e81970",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "WDVmxBcUQw19BpSR",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.871Z",
+      "updatedAt": "2026-02-24T16:03:56.871Z",
+      "id": "wQj5Xj5UnV45g5Mm",
+      "name": "intake"
+    }
+  ]
+}

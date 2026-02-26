@@ -1,0 +1,951 @@
+{
+  "name": "WF11 - Pre-Meeting Nurture Email Drafts",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF11: PRE-MEETING NURTURE EMAIL DRAFTS (with Compliance Guardrails)\n\n**Purpose:** AI drafts a personalized rapport-building email, then a SEPARATE Compliance Guardrails Agent reviews it against firm policies (via RAG/Pinecone) before saving.\n\n**Flow:**\n1. WF10 completes → calls WF11 with leadId\n2. AI Nurture Agent drafts warm, personalized email\n3. ⭐ Compliance Guardrails Agent reviews draft against embedded policy docs (Pinecone)\n4. If violations found: auto-revises text, flags compliance notes\n5. Draft saved to Airtable with compliance metadata\n6. Dashboard shows draft with Send / Dismiss buttons\n7. Send → returns mailto: link (advisor sends from their own email)\n\n**Two-agent pattern:** Generation agent + Review agent. Same Pinecone index, different purposes.\n**The human always sends the email themselves.** AI drafts, AI reviews, human decides.",
+        "height": 520,
+        "width": 620,
+        "color": 4
+      },
+      "id": "sn-wf11",
+      "name": "WF11 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            },
+            {
+              "name": "briefJson"
+            },
+            {
+              "name": "clientName"
+            },
+            {
+              "name": "clientEmail"
+            },
+            {
+              "name": "advisorName"
+            },
+            {
+              "name": "advisorId"
+            },
+            {
+              "name": "appointmentDatetime"
+            }
+          ]
+        }
+      },
+      "id": "wf11-trigger",
+      "name": "Called from WF10",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-load-lead",
+      "name": "Load Lead + Brief",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        448,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('Called from WF10').first().json;\nconst record = $('Load Lead + Brief').first().json;\nconst fields = record.fields || record;\n\n// Parse the prep brief\nlet brief = {};\ntry {\n  const briefRaw = trigger.briefJson || fields.consultationPrepBrief || '{}';\n  brief = typeof briefRaw === 'string' ? JSON.parse(briefRaw) : briefRaw;\n} catch(e) { brief = {}; }\n\nconst apptDate = trigger.appointmentDatetime || fields.appointmentDatetime;\nlet formattedDate = 'your upcoming consultation';\nlet formattedTime = '';\nif (apptDate) {\n  const d = new Date(apptDate);\n  formattedDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });\n  formattedTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });\n}\n\nreturn [{ json: {\n  leadId: fields.leadId || trigger.leadId,\n  airtableRecordId: record.id,\n  clientName: fields.fullName || trigger.clientName,\n  clientFirstName: (fields.fullName || trigger.clientName || '').split(' ')[0],\n  clientEmail: fields.email || trigger.clientEmail,\n  advisorName: fields.assignedAdvisorName || trigger.advisorName,\n  advisorId: fields.assignedAdvisorId || trigger.advisorId,\n  appointmentDatetime: apptDate,\n  formattedDate,\n  formattedTime,\n  province: fields.province || '',\n  investableAssets: fields.investableAssets || '',\n  financialGoals: fields.financialGoals || '',\n  investmentTimeline: fields.investmentTimeline || '',\n  riskTolerance: fields.riskTolerance || '',\n  currentAdvisorSituation: fields.currentAdvisorSituation || '',\n  freeText: fields.freeText || '',\n  // Prep brief sections for the AI\n  executiveSummary: brief.executiveSummary || '',\n  financialSnapshot: brief.financialSnapshot || {},\n  goalAnalysis: brief.goalAnalysis || [],\n  clientPsychologyNotes: brief.clientPsychologyNotes || {},\n  competitiveIntelligence: brief.competitiveIntelligence || '',\n  documentsToRequest: brief.documentsToRequest || []\n} }];"
+      },
+      "id": "wf11-build-prompt",
+      "name": "Build Nurture Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Draft a pre-meeting rapport-building email from {{ $json.advisorName }} to {{ $json.clientFirstName }}.\n\n## CLIENT CONTEXT\nFull Name: {{ $json.clientName }}\nProvince: {{ $json.province }}\nAssets: {{ $json.investableAssets }}\nGoals: {{ $json.financialGoals }}\nTimeline: {{ $json.investmentTimeline }}\nRisk Tolerance: {{ $json.riskTolerance }}\nAdvisor Situation: {{ $json.currentAdvisorSituation }}\nClient's Own Words: {{ $json.freeText }}\n\n## FROM THE PREP BRIEF\nExecutive Summary: {{ $json.executiveSummary }}\nFinancial Snapshot: {{ JSON.stringify($json.financialSnapshot) }}\nGoal Analysis: {{ JSON.stringify($json.goalAnalysis) }}\nClient Psychology: {{ JSON.stringify($json.clientPsychologyNotes) }}\nCompetitive Intel: {{ $json.competitiveIntelligence }}\nDocuments to Request: {{ JSON.stringify($json.documentsToRequest) }}\n\n## MEETING DETAILS\nDate: {{ $json.formattedDate }}\nTime: {{ $json.formattedTime }} ET\nAdvisor: {{ $json.advisorName }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a senior relationship manager at NorthStar Wealth Advisory drafting personalized pre-meeting emails. These emails go out 24-48 hours before a first consultation to build rapport and set the stage for a productive meeting.\n\n## YOUR GOAL\nMake the client feel like their advisor has ALREADY invested time in understanding their situation. This is the first personal touchpoint — it sets the tone for the entire relationship. The client should think: \"This person actually read my file.\"\n\n## TONE\n- Warm but professional. Not salesy. Not stiff.\n- Like a thoughtful colleague who happens to be great with money.\n- Show genuine intellectual curiosity about their financial situation.\n- Mirror the sophistication level of their asset range (don't talk down to a $500K+ client).\n\n## WHAT TO INCLUDE\n1. **Personal acknowledgment** — Reference something specific from their intake (goals, situation, or free text). NOT generic.\n2. **Light insight** — One or two observations that show you've thought about their situation. Not full advice, but enough to signal competence. E.g., \"Given your timeline and the current rate environment, I think we'll have some interesting options to explore around [specific topic].\"\n3. **What to expect** — Brief preview of what the consultation will cover, framed as collaborative (\"I'd love to explore...\" not \"I will tell you...\").\n4. **Gentle ask** — If there are documents that would make the meeting more productive, mention 1-2 (not a laundry list). Frame as optional: \"If you have X handy, it would help us hit the ground running.\"\n5. **Warm close** — Genuine-sounding, not corporate.\n\n## WHAT TO AVOID\n- Generic platitudes (\"We're committed to your financial success\")\n- Anything that sounds like a template\n- Giving actual financial advice (compliance issue)\n- Mentioning risk flags or sensitive observations from the prep brief\n- Being too long — this should be 200-350 words, readable in 90 seconds\n- Using the client's asset numbers or income explicitly (privacy)\n- Overpromising outcomes\n\n## OUTPUT SCHEMA (JSON only)\n{\n  \"subject\": \"Email subject line — personal, not corporate. Use their first name.\",\n  \"body\": \"The full email body as plain text. Use line breaks for paragraphs. Sign off as the advisor. Include advisor name and 'NorthStar Wealth Advisory' in signature.\",\n  \"internalNotes\": \"1-2 sentences for the advisor explaining the strategic angle of this email — what rapport-building goal it serves and what response signals to watch for.\"\n}\n\n## RULES\n- Subject line MUST include the client's first name\n- Body must reference at least ONE specific detail from their intake or prep brief\n- Body must mention the meeting date/time\n- Sign off with the advisor's actual name\n- Output ONLY valid JSON"
+        }
+      },
+      "id": "wf11-agent",
+      "name": "Nurture Email Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        928,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-pro-preview",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "id": "wf11-gemini",
+      "name": "Gemini 2.5 Flash (Nurture)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        864,
+        640
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{ \"type\": \"object\", \"properties\": { \"subject\": { \"type\": \"string\" }, \"body\": { \"type\": \"string\" }, \"internalNotes\": { \"type\": \"string\" } }, \"required\": [\"subject\", \"body\", \"internalNotes\"] }"
+      },
+      "id": "wf11-schema",
+      "name": "Nurture Draft Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        1072,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $('Nurture Email Agent').first().json;\nconst context = $('Build Nurture Prompt').first().json;\n\nconst draft = agentOutput.output\n  ? (typeof agentOutput.output === 'string' ? JSON.parse(agentOutput.output) : agentOutput.output)\n  : agentOutput;\n\nreturn [{ json: {\n  leadId: context.leadId,\n  airtableRecordId: context.airtableRecordId,\n  clientName: context.clientName,\n  clientEmail: context.clientEmail,\n  advisorName: context.advisorName,\n  subject: draft.subject || `Looking forward to our conversation, ${context.clientFirstName}`,\n  body: draft.body || '',\n  internalNotes: draft.internalNotes || '',\n  nurtureEmailStatus: 'PENDING_REVIEW'\n} }];"
+      },
+      "id": "wf11-process",
+      "name": "Process Draft Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-find-record",
+      "name": "Find Lead for Update",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1888,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "nurtureEmailDraft": "={{ $('Process Guardrails Result').first().json.body }}",
+            "nurtureEmailSubject": "={{ $('Process Guardrails Result').first().json.subject }}",
+            "nurtureEmailStatus": "={{ $('Process Guardrails Result').first().json.nurtureEmailStatus }}",
+            "complianceNotes": "={{ $('Process Guardrails Result').first().json.complianceNotes }}",
+            "complianceViolations": "={{ $('Process Guardrails Result').first().json.complianceViolations }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf11-save-draft",
+      "name": "Save Draft to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2128,
+        400
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/nurture/approve",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf11-approve-webhook",
+      "name": "Approve Nurture Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        1024
+      ],
+      "webhookId": "2b7c79e8-b2df-45f1-99a4-f44000d141fe"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.body.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-get-approved",
+      "name": "Get Approved Draft",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -208,
+        1024
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const record = $input.first().json;\nconst fields = record.fields || record;\nconst leadId = $('Approve Nurture Email').first().json.body.leadId;\n\nconst clientEmail = fields.email || '';\nconst subject = fields.nurtureEmailSubject || '';\nconst body = fields.nurtureEmailDraft || '';\n\n// Build mailto link for the frontend to open native email client\nconst mailtoLink = `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;\n\nreturn [{ json: {\n  leadId: fields.leadId || leadId,\n  airtableRecordId: record.id,\n  clientEmail,\n  subject,\n  body,\n  mailtoLink,\n  success: true\n} }];"
+      },
+      "id": "wf11-build-mailto",
+      "name": "Build mailto Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Build mailto Response').first().json.airtableRecordId }}",
+            "nurtureEmailStatus": "APPROVED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf11-mark-approved",
+      "name": "Mark Approved in Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        272,
+        1024
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, mailtoLink: $('Build mailto Response').first().json.mailtoLink, subject: $('Build mailto Response').first().json.subject, body: $('Build mailto Response').first().json.body, clientEmail: $('Build mailto Response').first().json.clientEmail }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "wf11-respond-approve",
+      "name": "Return mailto Link",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/nurture/dismiss",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf11-dismiss-webhook",
+      "name": "Dismiss Nurture Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        1264
+      ],
+      "webhookId": "66d10094-ba5e-49da-b0ac-1e7a5bf48b81"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.body.leadId }}'",
+        "options": {}
+      },
+      "id": "wf11-get-dismissed",
+      "name": "Get Dismissed Lead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -208,
+        1264
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "nurtureEmailStatus": "DISMISSED"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf11-mark-dismissed",
+      "name": "Mark Dismissed in Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        32,
+        1264
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, status: 'DISMISSED' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "wf11-respond-dismiss",
+      "name": "Return Dismiss Ack",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        1264
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "wf11-error-trigger",
+      "name": "Catch WF11 Errors",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorData = $input.first().json;\nreturn [{ json: { error: errorData, action: 'NURTURE_DRAFT_FAILED', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "wf11-error-handler",
+      "name": "Handle Nurture Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        1472
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Review the following client-facing email draft for compliance with NorthStar Wealth Advisory policies.\n\n## EMAIL TO REVIEW\nSubject: {{ $json.subject }}\n\nBody:\n{{ $json.body }}\n\n## CONTEXT\nThis email is from advisor {{ $json.advisorName }} to prospective client {{ $json.clientName }}.\nThe client has NOT yet been accepted — this is a pre-meeting rapport email.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a compliance review agent for NorthStar Wealth Advisory. Your job is to check outbound client-facing emails against firm policies BEFORE they are sent.\n\n## CRITICAL: USE THE COMPLIANCE POLICY TOOL\nYou MUST query the 'Compliance Policy Docs' tool to retrieve relevant compliance rules before making your assessment. Query for:\n1. Client communication standards and prohibited language\n2. Pre-engagement compliance requirements (what can/cannot be said before a client is formally onboarded)\n3. Financial advice boundaries and disclaimer requirements\n\n## CHECK FOR THESE VIOLATIONS\n1. **Specific financial advice** — Any concrete investment recommendations, specific product suggestions, or return projections before formal engagement\n2. **Guarantees or promises** — Language implying guaranteed outcomes, specific returns, or assured results\n3. **Misleading claims** — Overstating advisor qualifications, firm capabilities, or past performance\n4. **Privacy violations** — Mentioning specific asset amounts, income figures, or sensitive personal details the client shared in confidence\n5. **Regulatory issues** — Missing required disclaimers, unauthorized use of credentials/titles, or claims that violate MFDA/CSA advertising rules\n6. **Inappropriate tone** — Overly aggressive sales language, pressure tactics, fear-based urgency, or anything that could be perceived as coercive\n7. **Competitor disparagement** — Negative statements about other advisors or firms\n8. **Unauthorized commitments** — Promising specific meeting outcomes, fee structures, or services not yet discussed with the client\n\n## OUTPUT (JSON only)\n{\n  \"approved\": true/false,\n  \"overallAssessment\": \"PASS | MINOR_ISSUES | MAJOR_VIOLATIONS\",\n  \"violations\": [\n    {\n      \"type\": \"category from above\",\n      \"excerpt\": \"the problematic text from the email\",\n      \"explanation\": \"why this violates policy\",\n      \"severity\": \"LOW | MEDIUM | HIGH\",\n      \"suggestedFix\": \"how to fix it\"\n    }\n  ],\n  \"revisedSubject\": \"corrected subject if needed, otherwise original\",\n  \"revisedBody\": \"full corrected email body if any violations found, otherwise original body unchanged\",\n  \"complianceNotes\": \"1-2 sentence summary for the advisor explaining what was checked and any changes made\"\n}\n\n## RULES\n- approved=true ONLY if overallAssessment is PASS\n- If MINOR_ISSUES: approved=false, provide revisedBody with fixes applied\n- If MAJOR_VIOLATIONS: approved=false, provide revisedBody with fixes, flag for human review\n- Empty violations array = PASS\n- Be thorough but not overly restrictive — warm, personal emails are the GOAL, just without compliance issues\n- Do NOT strip personality or warmth from the email unless it crosses a compliance line\n- Output ONLY valid JSON"
+        }
+      },
+      "id": "wf11-guardrails-agent",
+      "name": "Compliance Guardrails Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1408,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "wf11-guardrails-gemini",
+      "name": "Gemini 2.5 Flash (Guardrails)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        640
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{ \"type\": \"object\", \"properties\": { \"approved\": { \"type\": \"boolean\" }, \"overallAssessment\": { \"type\": \"string\", \"enum\": [\"PASS\", \"MINOR_ISSUES\", \"MAJOR_VIOLATIONS\"] }, \"violations\": { \"type\": \"array\", \"items\": { \"type\": \"object\", \"properties\": { \"type\": { \"type\": \"string\" }, \"excerpt\": { \"type\": \"string\" }, \"explanation\": { \"type\": \"string\" }, \"severity\": { \"type\": \"string\", \"enum\": [\"LOW\", \"MEDIUM\", \"HIGH\"] }, \"suggestedFix\": { \"type\": \"string\" } }, \"required\": [\"type\", \"excerpt\", \"explanation\", \"severity\", \"suggestedFix\"] } }, \"revisedSubject\": { \"type\": \"string\" }, \"revisedBody\": { \"type\": \"string\" }, \"complianceNotes\": { \"type\": \"string\" } }, \"required\": [\"approved\", \"overallAssessment\", \"violations\", \"revisedSubject\", \"revisedBody\", \"complianceNotes\"] }"
+      },
+      "id": "wf11-guardrails-schema",
+      "name": "Guardrails Output Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2112,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "description": "NorthStar Wealth Advisory compliance and communication policy documents. Contains: client communication standards, pre-engagement rules, prohibited language and claims, MFDA/CSA advertising compliance requirements, disclaimer requirements, privacy and confidentiality rules, financial advice boundaries for pre-engagement communications, and vulnerable client communication guidelines. Query this tool to check email drafts against firm policies.",
+        "topK": 6
+      },
+      "id": "wf11-compliance-tool",
+      "name": "Compliance Policy Docs",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "pineconeIndex": {
+          "__rl": true,
+          "mode": "list",
+          "value": "northstar-policies",
+          "cachedResultName": "northstar-policies"
+        },
+        "options": {}
+      },
+      "id": "wf11-compliance-pinecone",
+      "name": "Pinecone (Compliance Check)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        880
+      ],
+      "credentials": {
+        "pineconeApi": {
+          "id": "yIemhxUEm2rJwniw",
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "id": "wf11-compliance-embeddings",
+      "name": "Embeddings Gemini (Compliance)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1312,
+        1056
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const guardrailsRaw = $('Compliance Guardrails Agent').first().json;\nconst original = $('Process Draft Output').first().json;\n\n// Parse guardrails output\nconst result = guardrailsRaw.output\n  ? (typeof guardrailsRaw.output === 'string' ? JSON.parse(guardrailsRaw.output) : guardrailsRaw.output)\n  : guardrailsRaw;\n\nconst approved = result.approved === true;\nconst assessment = result.overallAssessment || 'PASS';\n\n// Use revised text if there were issues, otherwise keep original\nconst finalSubject = (!approved && result.revisedSubject) ? result.revisedSubject : original.subject;\nconst finalBody = (!approved && result.revisedBody) ? result.revisedBody : original.body;\n\nreturn [{ json: {\n  // Pass through all original fields\n  leadId: original.leadId,\n  airtableRecordId: original.airtableRecordId,\n  clientName: original.clientName,\n  clientEmail: original.clientEmail,\n  advisorName: original.advisorName,\n  internalNotes: original.internalNotes,\n  // Final email content (revised if needed)\n  subject: finalSubject,\n  body: finalBody,\n  // Compliance metadata\n  complianceApproved: approved,\n  complianceAssessment: assessment,\n  complianceNotes: result.complianceNotes || '',\n  complianceViolations: JSON.stringify(result.violations || []),\n  // Status depends on result\n  nurtureEmailStatus: approved ? 'PENDING_REVIEW' : (assessment === 'MAJOR_VIOLATIONS' ? 'COMPLIANCE_FLAGGED' : 'PENDING_REVIEW')\n} }];"
+      },
+      "id": "wf11-process-guardrails",
+      "name": "Process Guardrails Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        880
+      ],
+      "id": "5732ff82-6915-4955-b896-259c306c3ce3",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called from WF10": {
+      "main": [
+        [
+          {
+            "node": "Load Lead + Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Lead + Brief": {
+      "main": [
+        [
+          {
+            "node": "Build Nurture Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Nurture Prompt": {
+      "main": [
+        [
+          {
+            "node": "Nurture Email Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nurture Email Agent": {
+      "main": [
+        [
+          {
+            "node": "Process Draft Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash (Nurture)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Nurture Email Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nurture Draft Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Nurture Email Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead for Update": {
+      "main": [
+        [
+          {
+            "node": "Save Draft to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Draft": {
+      "main": [
+        [
+          {
+            "node": "Build mailto Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build mailto Response": {
+      "main": [
+        [
+          {
+            "node": "Mark Approved in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Approved in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Return mailto Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dismiss Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Get Dismissed Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Dismissed Lead": {
+      "main": [
+        [
+          {
+            "node": "Mark Dismissed in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Dismissed in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Return Dismiss Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF11 Errors": {
+      "main": [
+        [
+          {
+            "node": "Handle Nurture Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Draft Output": {
+      "main": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash (Guardrails)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails Output Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Policy Docs": {
+      "ai_tool": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone (Compliance Check)": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Compliance Policy Docs",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Gemini (Compliance)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone (Compliance Check)",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Guardrails Agent": {
+      "main": [
+        [
+          {
+            "node": "Process Guardrails Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Guardrails Result": {
+      "main": [
+        [
+          {
+            "node": "Find Lead for Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compliance Policy Docs",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a510987a-1bf1-47d3-9185-b0af07e61b3c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "pD0jBk6n4k3HXT3W",
+  "tags": []
+}

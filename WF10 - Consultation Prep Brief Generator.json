@@ -1,0 +1,749 @@
+{
+  "name": "WF10 - Consultation Prep Brief Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF10: CONSULTATION PREP BRIEF GENERATOR\n\n**Purpose:** AI generates a substantive meeting preparation document for the assigned advisor before each consultation. Goes far beyond conversation starters — produces actionable financial analysis.\n\n**Triggers:**\n1. Called by WF5/WF6 after booking is confirmed (leadId input)\n2. Schedule: Daily at 7 AM ET — finds BOOKED leads with appointments in the next 48h that don't yet have a prep brief\n3. Manual: Click Execute\n\n**Output:**\n- consultationPrepBrief field written to Leads table in Airtable\n- Email sent to assigned advisor with the brief\n\n**AI generates:**\n- Financial situation analysis (asset allocation context, income-to-asset ratio)\n- Goal-specific preparation (retirement gap analysis, tax optimization angles)\n- Client psychology profile (risk tolerance vs actual behavior signals)\n- Market context talking points (current rates, relevant regulatory changes)\n- Recommended meeting agenda with time blocks\n- Red flags requiring delicate handling\n- Documents to request from client",
+        "height": 1120,
+        "width": 1388,
+        "color": 4
+      },
+      "id": "sn-wf10-overview",
+      "name": "WF10 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            },
+            {
+              "name": "source"
+            }
+          ]
+        }
+      },
+      "id": "wf10-trigger-subworkflow",
+      "name": "Called After Booking",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 12
+            }
+          ]
+        }
+      },
+      "id": "wf10-schedule",
+      "name": "Daily 7 AM ET",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        544
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "wf10-manual",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        208,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "=AND({status}='BOOKED', {consultationPrepBrief}='', {appointmentDatetime}!='')",
+        "options": {}
+      },
+      "id": "wf10-find-upcoming",
+      "name": "Find Upcoming Appointments",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        624
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-results",
+              "leftValue": "={{ $json.leadId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf10-has-leads",
+      "name": "Any Leads to Prep?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf10-get-lead-direct",
+      "name": "Get Lead from Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        304
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\nfor (const item of items) {\n  const r = item.json;\n  const fields = r.fields || r;\n  results.push({\n    json: {\n      airtableRecordId: r.id || '',\n      leadId: fields.leadId,\n      fullName: fields.fullName,\n      email: fields.email,\n      phone: fields.phone || '',\n      province: fields.province,\n      investableAssets: fields.investableAssets,\n      annualIncome: fields.annualIncome,\n      financialGoals: fields.financialGoals,\n      investmentTimeline: fields.investmentTimeline,\n      riskTolerance: fields.riskTolerance,\n      currentAdvisorSituation: fields.currentAdvisorSituation,\n      preferredDate: fields.preferredDate || '',\n      preferredTime: fields.preferredTime || '',\n      freeText: fields.freeText || '',\n      profileSummary: fields.profileSummary || '',\n      recommendedServiceTier: fields.recommendedServiceTier || '',\n      advisorMatchRanking: fields.advisorMatchRanking || '[]',\n      riskFlags: fields.riskFlags || '[]',\n      conversationStarters: fields.conversationStarters || '[]',\n      priorityScore: fields.priorityScore || '',\n      priorityReasoning: fields.priorityReasoning || '',\n      assignedAdvisorId: fields.assignedAdvisorId || '',\n      assignedAdvisorName: fields.assignedAdvisorName || '',\n      appointmentDatetime: fields.appointmentDatetime || '',\n      bookedAt: fields.bookedAt || '',\n      submittedAt: fields.submittedAt || ''\n    }\n  });\n}\nreturn results;"
+      },
+      "id": "wf10-merge-trigger",
+      "name": "Merge to Common Path",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:advisors",
+        "options": {}
+      },
+      "id": "wf10-get-advisor-cache",
+      "name": "Get Advisors + Config",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        432
+      ],
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:config",
+        "options": {}
+      },
+      "id": "wf10-get-config",
+      "name": "Get Firm Config",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        432
+      ],
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Merge to Common Path').first().json;\nlet advisorsRaw = $('Get Advisors + Config').first().json;\nlet configRaw = $('Get Firm Config').first().json;\n\nlet advisors = [];\nlet config = {};\ntry {\n  if (typeof advisorsRaw === 'string') advisors = JSON.parse(advisorsRaw);\n  else if (advisorsRaw?.data) advisors = JSON.parse(advisorsRaw.data);\n  else if (advisorsRaw?.propertyName && advisorsRaw.propertyName !== 'null') advisors = JSON.parse(advisorsRaw.propertyName);\n} catch(e) { advisors = []; }\ntry {\n  if (typeof configRaw === 'string') config = JSON.parse(configRaw);\n  else if (configRaw?.data) config = JSON.parse(configRaw.data);\n  else if (configRaw?.propertyName && configRaw.propertyName !== 'null') config = JSON.parse(configRaw.propertyName);\n} catch(e) { config = {}; }\n\nconst assignedAdvisor = advisors.find(a => a.advisorId === lead.assignedAdvisorId) || { advisorName: lead.assignedAdvisorName, specializations: '' };\n\nlet riskFlags = [];\nlet serviceTier = {};\nlet conversationStarters = [];\ntry { riskFlags = JSON.parse(lead.riskFlags || '[]'); } catch(e) {}\ntry { serviceTier = JSON.parse(lead.recommendedServiceTier || '{}'); } catch(e) {}\ntry { conversationStarters = JSON.parse(lead.conversationStarters || '[]'); } catch(e) {}\n\nconst now = new Date();\nconst apptDate = lead.appointmentDatetime ? new Date(lead.appointmentDatetime) : null;\nconst hoursUntil = apptDate ? Math.round((apptDate - now) / (1000*60*60)) : 'unknown';\n\nconst assetRanges = { 'under_25k': 15000, '25k_100k': 62500, '100k_250k': 175000, '250k_500k': 375000, '500k_1m': 750000, '1m_plus': 1500000 };\nconst incomeRanges = { 'under_50k': 35000, '50k_100k': 75000, '100k_200k': 150000, '200k_500k': 350000, '500k_plus': 750000 };\nconst estAssets = assetRanges[lead.investableAssets] || 0;\nconst estIncome = incomeRanges[lead.annualIncome] || 0;\nconst assetToIncomeRatio = estIncome > 0 ? (estAssets / estIncome).toFixed(1) : 'N/A';\n\nreturn [{ json: {\n  ...lead,\n  advisorProfile: assignedAdvisor,\n  riskFlagsParsed: riskFlags,\n  serviceTierParsed: serviceTier,\n  conversationStartersParsed: conversationStarters,\n  hoursUntilAppointment: hoursUntil,\n  estimatedAssets: estAssets,\n  estimatedIncome: estIncome,\n  assetToIncomeRatio: assetToIncomeRatio,\n  firmName: config.firm_name || 'NorthStar Wealth Advisory',\n  consultationDuration: config.consultation_duration_minutes || 60,\n  timezone: config.timezone || 'America/Toronto'\n} }];"
+      },
+      "id": "wf10-build-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a consultation preparation brief for this upcoming client meeting.\n\n## CLIENT PROFILE\nName: {{ $json.fullName }}\nProvince: {{ $json.province }}\nInvestable Assets: {{ $json.investableAssets }} (est. ${{ $json.estimatedAssets.toLocaleString() }})\nAnnual Income: {{ $json.annualIncome }} (est. ${{ $json.estimatedIncome.toLocaleString() }})\nAsset-to-Income Ratio: {{ $json.assetToIncomeRatio }}x\nFinancial Goals: {{ $json.financialGoals }}\nInvestment Timeline: {{ $json.investmentTimeline }}\nRisk Tolerance: {{ $json.riskTolerance }}\nCurrent Advisor Situation: {{ $json.currentAdvisorSituation }}\nFree Text from Client: {{ $json.freeText }}\n\n## AI ENRICHMENT SUMMARY\nProfile Summary: {{ $json.profileSummary }}\nService Tier: {{ JSON.stringify($json.serviceTierParsed) }}\nPriority: {{ $json.priorityScore }} — {{ $json.priorityReasoning }}\nRisk Flags: {{ JSON.stringify($json.riskFlagsParsed) }}\nExisting Conversation Starters: {{ JSON.stringify($json.conversationStartersParsed) }}\n\n## MEETING DETAILS\nAssigned Advisor: {{ $json.assignedAdvisorName }} ({{ $json.advisorProfile.specializations }})\nAppointment: {{ $json.appointmentDatetime }}\nDuration: {{ $json.consultationDuration }} minutes\nHours Until Meeting: {{ $json.hoursUntilAppointment }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a senior financial planning consultant preparing briefing documents for wealth advisors at NorthStar Wealth Advisory (Toronto, Canada). Your briefs are used by advisors to walk into first consultations fully prepared — as if they've already studied this client for an hour.\n\nYou write like a sharp, experienced advisor briefing a colleague: direct, analytical, no fluff. Every line should make the advisor more prepared.\n\n## OUTPUT SCHEMA (JSON only)\n{\n  \"executiveSummary\": \"2-3 sentences. Lead with the single most important thing the advisor needs to know walking in. What makes this client tick, and what's the #1 opportunity?\",\n  \"financialSnapshot\": {\n    \"assetContext\": \"Interpret asset range in context. What does $250K-500K mean for someone in their situation? How does it compare to Canadian median?\",\n    \"incomeAssetDynamic\": \"What does the asset-to-income ratio tell us? Are they a saver, spender, or did wealth come from elsewhere (inheritance, sale, etc.)?\",\n    \"wealthTrajectory\": \"Based on timeline + risk tolerance + goals, where are they likely headed? What's realistic?\"\n  },\n  \"goalAnalysis\": [\n    {\n      \"goal\": \"goal name\",\n      \"keyQuestions\": [\"2-3 specific financial questions to ask\"],\n      \"quickMath\": \"Back-of-napkin calculation or benchmark. E.g., 'At 6% avg return over 10yr, $375K grows to ~$670K before contributions. If they need $1.2M for retirement, that's a $350/mo gap.'\",\n      \"canadianContext\": \"Relevant Canadian-specific angle: RRSP room, TFSA strategy, RESP if education, principal residence exemption if estate, etc.\"\n    }\n  ],\n  \"clientPsychologyNotes\": {\n    \"riskProfile\": \"Interpret stated risk tolerance against their actual situation. Does aggressive + 5yr timeline make sense? Are they actually moderate but checking aggressive?\",\n    \"advisorRelationship\": \"If switching: why? What went wrong? If first-time: what are they nervous about?\",\n    \"decisionMakingStyle\": \"From the intake signals, how should the advisor present options?\"\n  },\n  \"meetingAgenda\": [\n    {\n      \"timeBlock\": \"0-10 min\",\n      \"activity\": \"what to do\",\n      \"advisorNotes\": \"specific talking points or techniques\"\n    }\n  ],\n  \"documentsToRequest\": [\"List of specific documents the advisor should ask the client to bring or send\"],\n  \"redFlagsAndLandmines\": [\"Things that could go wrong. Sensitive topics. Unrealistic expectations to manage.\"],\n  \"competitiveIntelligence\": \"If switching firms, what can we infer about what they want that they weren't getting?\"\n}\n\n## RULES\n- Ground every number in intake data or Canadian financial benchmarks\n- Reference RRSP ($31,560 limit 2025), TFSA ($7,000/yr), RESP ($2,500/yr CESG match) where relevant\n- For retirement: reference CPP (max ~$16,375/yr at 65), OAS (~$8,560/yr)\n- For tax: reference Ontario marginal rates, capital gains inclusion, dividend tax credits\n- If inheritance mentioned: flag Ontario probate fees (1.5% over $50K)\n- Meeting agenda should total the consultation duration\n- Be specific, not generic. 'Ask about RRSP room' beats 'discuss retirement'\n- Output ONLY valid JSON matching the schema. No markdown, no backticks, no preamble."
+        }
+      },
+      "id": "wf10-prep-agent",
+      "name": "Consultation Prep Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1920,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "wf10-gemini",
+      "name": "Gemini 2.5 Flash (Prep)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1872,
+        672
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{ \"type\": \"object\", \"properties\": { \"executiveSummary\": { \"type\": \"string\" }, \"financialSnapshot\": { \"type\": \"object\", \"properties\": { \"assetContext\": { \"type\": \"string\" }, \"incomeAssetDynamic\": { \"type\": \"string\" }, \"wealthTrajectory\": { \"type\": \"string\" } }, \"required\": [\"assetContext\", \"incomeAssetDynamic\", \"wealthTrajectory\"] }, \"goalAnalysis\": { \"type\": \"array\", \"items\": { \"type\": \"object\", \"properties\": { \"goal\": { \"type\": \"string\" }, \"keyQuestions\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }, \"quickMath\": { \"type\": \"string\" }, \"canadianContext\": { \"type\": \"string\" } }, \"required\": [\"goal\", \"keyQuestions\", \"quickMath\", \"canadianContext\"] } }, \"clientPsychologyNotes\": { \"type\": \"object\", \"properties\": { \"riskProfile\": { \"type\": \"string\" }, \"advisorRelationship\": { \"type\": \"string\" }, \"decisionMakingStyle\": { \"type\": \"string\" } }, \"required\": [\"riskProfile\", \"advisorRelationship\", \"decisionMakingStyle\"] }, \"meetingAgenda\": { \"type\": \"array\", \"items\": { \"type\": \"object\", \"properties\": { \"timeBlock\": { \"type\": \"string\" }, \"activity\": { \"type\": \"string\" }, \"advisorNotes\": { \"type\": \"string\" } }, \"required\": [\"timeBlock\", \"activity\", \"advisorNotes\"] } }, \"documentsToRequest\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }, \"redFlagsAndLandmines\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }, \"competitiveIntelligence\": { \"type\": \"string\" } }, \"required\": [\"executiveSummary\", \"financialSnapshot\", \"goalAnalysis\", \"clientPsychologyNotes\", \"meetingAgenda\", \"documentsToRequest\", \"redFlagsAndLandmines\", \"competitiveIntelligence\"] }"
+      },
+      "id": "wf10-output-parser",
+      "name": "Prep Brief Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2064,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $('Consultation Prep Agent').first().json;\nconst lead = $('Build AI Prompt').first().json;\n\nconst brief = agentOutput.output\n  ? (typeof agentOutput.output === 'string' ? JSON.parse(agentOutput.output) : agentOutput.output)\n  : agentOutput;\n\nconst briefJson = JSON.stringify(brief);\n\nconst apptDate = lead.appointmentDatetime ? new Date(lead.appointmentDatetime) : null;\nconst formattedDate = apptDate ? apptDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'TBD';\nconst formattedTime = apptDate ? apptDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'TBD';\n\nconst agendaHtml = (brief.meetingAgenda || []).map(a =>\n  `<tr><td style=\"padding:8px;border:1px solid #e2e8f0;font-weight:600;width:100px;\">${a.timeBlock}</td><td style=\"padding:8px;border:1px solid #e2e8f0;\"><strong>${a.activity}</strong><br/><span style=\"color:#64748b;font-size:13px;\">${a.advisorNotes}</span></td></tr>`\n).join('');\n\nconst goalsHtml = (brief.goalAnalysis || []).map(g =>\n  `<div style=\"margin-bottom:16px;padding:12px;background:#f0f9ff;border-radius:8px;\"><h4 style=\"margin:0 0 8px;color:#0f172a;\">Target: ${g.goal}</h4><p style=\"margin:4px 0;font-size:14px;\"><strong>Quick Math:</strong> ${g.quickMath}</p><p style=\"margin:4px 0;font-size:14px;\"><strong>Canadian Context:</strong> ${g.canadianContext}</p><p style=\"margin:4px 0;font-size:14px;\"><strong>Key Questions:</strong></p><ul style=\"margin:4px 0;\">${g.keyQuestions.map(q => `<li style=\"font-size:14px;\">${q}</li>`).join('')}</ul></div>`\n).join('');\n\nconst docsHtml = (brief.documentsToRequest || []).map(d => `<li>${d}</li>`).join('');\nconst flagsHtml = (brief.redFlagsAndLandmines || []).map(f => `<li style=\"color:#dc2626;\">${f}</li>`).join('');\n\nconst emailBody = `<div style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:680px;margin:0 auto;\"><div style=\"background:#0f172a;color:white;padding:24px 32px;border-radius:12px 12px 0 0;\"><h1 style=\"margin:0;font-size:22px;\">Consultation Prep Brief</h1><p style=\"margin:8px 0 0;opacity:0.8;font-size:14px;\">${lead.fullName} — ${formattedDate} at ${formattedTime} ET</p></div><div style=\"padding:24px 32px;background:white;border:1px solid #e2e8f0;\"><div style=\"background:#fefce8;border-left:4px solid #eab308;padding:16px;margin-bottom:24px;border-radius:0 8px 8px 0;\"><h3 style=\"margin:0 0 8px;color:#854d0e;\">Executive Summary</h3><p style=\"margin:0;font-size:15px;line-height:1.5;\">${brief.executiveSummary}</p></div><h3 style=\"color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px;\">Financial Snapshot</h3><p><strong>Asset Context:</strong> ${brief.financialSnapshot?.assetContext || ''}</p><p><strong>Income-Asset Dynamic:</strong> ${brief.financialSnapshot?.incomeAssetDynamic || ''}</p><p><strong>Wealth Trajectory:</strong> ${brief.financialSnapshot?.wealthTrajectory || ''}</p><h3 style=\"color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px;\">Goal Analysis</h3>${goalsHtml}<h3 style=\"color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px;\">Client Psychology</h3><p><strong>Risk Profile:</strong> ${brief.clientPsychologyNotes?.riskProfile || ''}</p><p><strong>Advisor Relationship:</strong> ${brief.clientPsychologyNotes?.advisorRelationship || ''}</p><p><strong>Decision-Making Style:</strong> ${brief.clientPsychologyNotes?.decisionMakingStyle || ''}</p>${brief.competitiveIntelligence ? `<h3 style=\"color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px;\">Competitive Intelligence</h3><p>${brief.competitiveIntelligence}</p>` : ''}<h3 style=\"color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px;\">Recommended Meeting Agenda</h3><table style=\"width:100%;border-collapse:collapse;\">${agendaHtml}</table><h3 style=\"color:#0f172a;border-bottom:2px solid #e2e8f0;padding-bottom:8px;\">Documents to Request</h3><ul>${docsHtml}</ul>${flagsHtml ? `<h3 style=\"color:#dc2626;border-bottom:2px solid #fecaca;padding-bottom:8px;\">Red Flags and Landmines</h3><ul>${flagsHtml}</ul>` : ''}</div><div style=\"background:#f8fafc;padding:16px 32px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:0;text-align:center;\"><p style=\"margin:0;color:#64748b;font-size:13px;\">Generated by NorthStar AI Pipeline</p></div></div>`;\n\nreturn [{ json: {\n  leadId: lead.leadId,\n  airtableRecordId: lead.airtableRecordId,\n  assignedAdvisorName: lead.assignedAdvisorName,\n  assignedAdvisorId: lead.assignedAdvisorId,\n  clientName: lead.fullName,\n  clientEmail: lead.email,\n  briefJson,\n  emailBody,\n  emailSubject: `Prep Brief: ${lead.fullName} — ${formattedDate} at ${formattedTime} ET`,\n  appointmentDatetime: lead.appointmentDatetime\n} }];"
+      },
+      "id": "wf10-process-output",
+      "name": "Process Brief Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $('Process Brief Output').first().json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf10-find-record",
+      "name": "Find Lead Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2448,
+        432
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "consultationPrepBrief": "={{ $('Process Brief Output').first().json.briefJson }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf10-update-airtable",
+      "name": "Save Brief to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2688,
+        432
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "smuharsk@gmail.com",
+        "subject": "={{ $('Process Brief Output').first().json.emailSubject }}",
+        "message": "={{ $('Process Brief Output').first().json.emailBody }}",
+        "options": {}
+      },
+      "id": "wf10-send-email",
+      "name": "Email Brief to Advisor",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2928,
+        432
+      ],
+      "webhookId": "1d5da68a-08dc-4da3-8882-a68e1ed3c62b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "wf10-error-trigger",
+      "name": "Catch WF10 Errors",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        1616,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorData = $input.first().json;\nreturn [{ json: { error: errorData, action: 'PREP_BRIEF_FAILED', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "wf10-error-handler",
+      "name": "Handle Prep Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "smuharsk@gmail.com",
+        "subject": "WF10 Prep Brief FAILED — NorthStar Pipeline",
+        "message": "=Consultation Prep Brief generation failed at {{ $now.toISO() }}\n\nError: {{ JSON.stringify($json.error) }}\n\nLead may need manual brief preparation.",
+        "options": {}
+      },
+      "id": "wf10-error-email",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2096,
+        1008
+      ],
+      "webhookId": "052ee5a0-18d7-4b4d-ab64-15a188e7fb14",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "pD0jBk6n4k3HXT3W",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Process Brief Output').first().json.leadId }}",
+            "briefJson": "={{ $('Process Brief Output').first().json.briefJson }}",
+            "clientName": "={{ $('Process Brief Output').first().json.clientName }}",
+            "clientEmail": "={{ $('Process Brief Output').first().json.clientEmail }}",
+            "advisorName": "={{ $('Process Brief Output').first().json.assignedAdvisorName }}",
+            "advisorId": "={{ $('Process Brief Output').first().json.assignedAdvisorId }}",
+            "appointmentDatetime": "={{ $('Process Brief Output').first().json.appointmentDatetime }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "type": "string"
+            },
+            {
+              "id": "briefJson",
+              "displayName": "briefJson",
+              "type": "string"
+            },
+            {
+              "id": "clientName",
+              "displayName": "clientName",
+              "type": "string"
+            },
+            {
+              "id": "clientEmail",
+              "displayName": "clientEmail",
+              "type": "string"
+            },
+            {
+              "id": "advisorName",
+              "displayName": "advisorName",
+              "type": "string"
+            },
+            {
+              "id": "advisorId",
+              "displayName": "advisorId",
+              "type": "string"
+            },
+            {
+              "id": "appointmentDatetime",
+              "displayName": "appointmentDatetime",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "wf10-trigger-wf11",
+      "name": "Trigger WF11 - Nurture Draft",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        3168,
+        432
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called After Booking": {
+      "main": [
+        [
+          {
+            "node": "Get Lead from Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 7 AM ET": {
+      "main": [
+        [
+          {
+            "node": "Find Upcoming Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Find Upcoming Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead from Airtable": {
+      "main": [
+        [
+          {
+            "node": "Merge to Common Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Upcoming Appointments": {
+      "main": [
+        [
+          {
+            "node": "Any Leads to Prep?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Leads to Prep?": {
+      "main": [
+        [
+          {
+            "node": "Merge to Common Path",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Merge to Common Path": {
+      "main": [
+        [
+          {
+            "node": "Get Advisors + Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Advisors + Config": {
+      "main": [
+        [
+          {
+            "node": "Get Firm Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Firm Config": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "Consultation Prep Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultation Prep Agent": {
+      "main": [
+        [
+          {
+            "node": "Process Brief Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash (Prep)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Consultation Prep Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Brief Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Consultation Prep Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Brief Output": {
+      "main": [
+        [
+          {
+            "node": "Find Lead Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead Record": {
+      "main": [
+        [
+          {
+            "node": "Save Brief to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Brief to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Email Brief to Advisor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF10 Errors": {
+      "main": [
+        [
+          {
+            "node": "Handle Prep Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Prep Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Brief to Advisor": {
+      "main": [
+        [
+          {
+            "node": "Trigger WF11 - Nurture Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "11e485b0-e5e0-41b2-b726-b66fddc97856",
+  "meta": {
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "JlBlolawHoZv1ylN",
+  "tags": []
+}

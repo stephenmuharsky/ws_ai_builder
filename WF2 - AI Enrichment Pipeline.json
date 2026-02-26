@@ -1,0 +1,682 @@
+{
+  "name": "WF2 - AI Enrichment Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF2: AI ENRICHMENT PIPELINE (RAG-Enhanced)\n\n**Trigger:** Called by WF1 after lead passes disqualification\n\n**Flow:**\n1. Receive leadId from WF1\n2. Read lead from Airtable\n3. Load business data (advisors, service tiers) from Redis cache\n4. **RAG-Enhanced** AI Enrichment Agent generates structured profile\n   - Queries Pinecone vector store for firm policy context\n   - Uses NorthStar Comprehensive Policy Manual for suitability, tier, and risk assessment\n5. Update lead in Airtable with enrichment data\n6. Trigger WF3 - Availability Pre-Check\n\n**RAG Component:** Firm Policy Knowledge tool queries embedded compliance/policy docs from Pinecone (fed by WF13).\n\n**Simplified: No Redis for lead state. Airtable is source of truth.**",
+        "height": 480,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1328,
+        -144
+      ],
+      "id": "9e43a546-2935-48ca-ab6b-5d8c20424f20",
+      "name": "WF2 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -928,
+        256
+      ],
+      "id": "79d1505e-94f4-4726-9299-2e5225cc3560",
+      "name": "Called from WF1"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -688,
+        256
+      ],
+      "id": "airtable-get-lead",
+      "name": "Get Lead from Airtable",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify lead exists and status is correct\nconst items = $input.all();\nif (!items || items.length === 0) {\n  throw new Error('Lead not found in Airtable');\n}\nconst record = items[0].json;\nconst fields = record.fields || record;\nconst status = fields.status;\nif (status !== 'PENDING_ENRICHMENT') {\n  throw new Error(`Lead ${fields.leadId} status is ${status}, expected PENDING_ENRICHMENT. Skipping.`);\n}\n// Pass through the Airtable record ID + all fields\nreturn [{ json: { airtableRecordId: record.id, ...fields } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        256
+      ],
+      "id": "c554d700-e5f0-45bb-995b-ba91ac36f0b6",
+      "name": "Verify Lead Status"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:advisors",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        256
+      ],
+      "id": "00c19ae6-2b7b-4671-b2a8-d71a12dfb1cf",
+      "name": "Get Advisors Cache",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:service_tiers",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        32,
+        256
+      ],
+      "id": "463b2f0d-95e0-4309-bc30-40c1b987d8ed",
+      "name": "Get Service Tiers Cache",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge lead data + business data for AI agent\nconst lead = $('Verify Lead Status').first().json;\nlet advisorsRaw = $('Get Advisors Cache').first().json;\nlet tiersRaw = $('Get Service Tiers Cache').first().json;\n\n// Parse Redis values - handle different return shapes\nlet advisors = null;\nlet tiers = null;\n\ntry {\n  if (typeof advisorsRaw === 'string' && advisorsRaw !== '') advisors = JSON.parse(advisorsRaw);\n  else if (advisorsRaw && advisorsRaw.data) advisors = JSON.parse(advisorsRaw.data);\n  else if (advisorsRaw && typeof advisorsRaw.propertyName === 'string' && advisorsRaw.propertyName !== 'null' && advisorsRaw.propertyName) advisors = JSON.parse(advisorsRaw.propertyName);\n} catch(e) { advisors = null; }\n\ntry {\n  if (typeof tiersRaw === 'string' && tiersRaw !== '') tiers = JSON.parse(tiersRaw);\n  else if (tiersRaw && tiersRaw.data) tiers = JSON.parse(tiersRaw.data);\n  else if (tiersRaw && typeof tiersRaw.propertyName === 'string' && tiersRaw.propertyName !== 'null' && tiersRaw.propertyName) tiers = JSON.parse(tiersRaw.propertyName);\n} catch(e) { tiers = null; }\n\n// Fallback: hardcoded advisor + tier data from Airtable if Redis cache is empty\nif (!advisors || !Array.isArray(advisors) || advisors.length === 0) {\n  advisors = [\n    {advisorId: 'ADV001', name: 'Michael Torres', specializations: 'tax_optimization,wealth_growth,estate_planning', currentCaseload: 18, maxCaseload: 25},\n    {advisorId: 'ADV002', name: 'Priya Sharma', specializations: 'retirement_planning,education_savings,tax_optimization', currentCaseload: 14, maxCaseload: 20},\n    {advisorId: 'ADV003', name: 'David Kim', specializations: 'estate_planning,wealth_growth,retirement_planning', currentCaseload: 22, maxCaseload: 25},\n    {advisorId: 'ADV004', name: 'Rachel Nguyen', specializations: 'debt_management,retirement_planning,education_savings', currentCaseload: 8, maxCaseload: 20}\n  ];\n}\n\nif (!tiers || !Array.isArray(tiers) || tiers.length === 0) {\n  tiers = [\n    {tierId: 'T1', tierName: 'Financial Planning', minAssets: '100k_250k', qualifyingGoals: 'retirement_planning,education_savings,debt_management,wealth_growth'},\n    {tierId: 'T2', tierName: 'Wealth Management', minAssets: '250k_500k', qualifyingGoals: 'retirement_planning,wealth_growth,tax_optimization,estate_planning'},\n    {tierId: 'T3', tierName: 'Executive Wealth', minAssets: '500k_1m', qualifyingGoals: 'retirement_planning,wealth_growth,tax_optimization,estate_planning'}\n  ];\n}\n\nreturn [{\n  json: {\n    leadData: lead,\n    advisors,\n    serviceTiers: tiers\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        256
+      ],
+      "id": "93a00165-da1b-4e88-935f-43d19cc877b0",
+      "name": "Merge Lead + Business Data"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Lead Data:\n{{ JSON.stringify($json.leadData, null, 2) }}\n\nAvailable Advisors:\n{{ JSON.stringify($json.advisors, null, 2) }}\n\nService Tiers:\n{{ JSON.stringify($json.serviceTiers, null, 2) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a client intake enrichment agent for NorthStar Wealth Advisory, a financial advisory firm in Toronto, Canada. Analyze intake form data and generate a structured assessment. Output JSON only — no explanations, no markdown.\n\n## CRITICAL: USE THE FIRM POLICY KNOWLEDGE TOOL\nBefore generating your assessment, you MUST query the 'Firm Policy Knowledge' tool to retrieve relevant firm policies. Make at least 2 queries:\n1. Query for service tier eligibility criteria and the client's specific financial goals\n2. Query for advisor matching rules, risk flag detection criteria, and suitability assessment guidelines\n\nUse the retrieved policy context to inform ALL of your assessments — tier recommendation, advisor ranking, risk flags, priority scoring, and conversation starters should all align with documented firm policies rather than generic financial advice.\n\n## OUTPUT SCHEMA\n{\n  \"profileSummary\": \"3-4 sentence natural language synthesis of the client's financial situation, goals, and notable signals. Write as if briefing a senior advisor.\",\n  \"recommendedServiceTier\": {\n    \"tierId\": \"string\",\n    \"tierName\": \"string\",\n    \"reasoning\": \"1-2 sentences explaining why this tier fits, referencing firm policy criteria\"\n  },\n  \"advisorMatchRanking\": [\n    {\n      \"advisorId\": \"string\",\n      \"advisorName\": \"string\",\n      \"matchScore\": 0-100,\n      \"reasoning\": \"1 sentence\"\n    }\n  ],\n  \"conversationStarters\": [\"3 suggested talking points, informed by firm's client engagement approach\"],\n  \"riskFlags\": [\n    {\n      \"flag\": \"short label\",\n      \"detail\": \"1-2 sentence explanation\",\n      \"severity\": \"LOW | MEDIUM | HIGH\"\n    }\n  ],\n  \"priorityScore\": \"HIGH | MEDIUM | LOW\",\n  \"priorityReasoning\": \"1-2 sentences\",\n  \"documentsToRequest\": [\"list of documents the client should prepare for the consultation\"]\n}\n\n## ADVISOR MATCHING RULES\n- Rank by: specialization overlap (40%), available capacity (30%), overall fit (30%)\n- Advisors at >=90% caseload ranked lower\n- Return ALL advisors ranked\n- Reference firm policy on advisor tier experience when ranking\n\n## RISK FLAG DETECTION\nQuery the firm policy tool for risk flag criteria. Common flags include:\n- Inheritance/windfall -> Liquidity event — immediate planning needed\n- Short timeline + aggressive risk -> Expectations management needed\n- Switching advisor -> Ask about pain points with previous advisor\n- Multiple competing goals -> Goal prioritization discussion needed\n- Divorce/separation -> Complex asset division likely, check vulnerable client indicators\n- Crypto/day trading/options -> May expect services outside firm scope\n- Quebec residency -> Civil law estate planning, French language requirements\n- Cross-border indicators (US mentions) -> Requires Tier 2+ service\n- If no flags -> empty array\n\n## DOCUMENTS TO REQUEST\nGenerate a personalized list based on client situation. Always include baseline: recent bank statements, most recent NOA from CRA, previous year's tax return.\n\n## PRIORITY SCORING\n- HIGH: Assets >= $500K OR urgency signals (inheritance, divorce, imminent retirement)\n- MEDIUM: Assets $100K-$500K with good fit\n- LOW: Assets $100K-$250K with single goal\n\n## CRITICAL: Output ONLY valid JSON. Never fabricate info. Ground assessments in firm policy context retrieved from the tool."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        512,
+        256
+      ],
+      "id": "1d748cca-0d00-462f-8fec-e49121ec949d",
+      "name": "Lead Enrichment Agent"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        320,
+        608
+      ],
+      "id": "6e0de649-46ef-4f8e-8084-9ebd9edbf8e6",
+      "name": "Gemini 2.5 Flash (Enrichment)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"profileSummary\": { \"type\": \"string\" },\n    \"recommendedServiceTier\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"tierId\": { \"type\": \"string\" },\n        \"tierName\": { \"type\": \"string\" },\n        \"reasoning\": { \"type\": \"string\" }\n      },\n      \"required\": [\"tierId\", \"tierName\", \"reasoning\"]\n    },\n    \"advisorMatchRanking\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"advisorId\": { \"type\": \"string\" },\n          \"advisorName\": { \"type\": \"string\" },\n          \"matchScore\": { \"type\": \"number\" },\n          \"reasoning\": { \"type\": \"string\" }\n        },\n        \"required\": [\"advisorId\", \"advisorName\", \"matchScore\", \"reasoning\"]\n      }\n    },\n    \"conversationStarters\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } },\n    \"riskFlags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"flag\": { \"type\": \"string\" },\n          \"detail\": { \"type\": \"string\" },\n          \"severity\": { \"type\": \"string\", \"enum\": [\"LOW\", \"MEDIUM\", \"HIGH\"] }\n        },\n        \"required\": [\"flag\", \"detail\", \"severity\"]\n      }\n    },\n    \"priorityScore\": { \"type\": \"string\", \"enum\": [\"HIGH\", \"MEDIUM\", \"LOW\"] },\n    \"priorityReasoning\": { \"type\": \"string\" },\n    \"documentsToRequest\": {\n      \"type\": \"array\",\n      \"items\": { \"type\": \"string\" },\n      \"description\": \"Specific documents the client should prepare for the consultation, tailored to their financial situation, goals, and risk flags.\"\n    }\n  },\n  \"required\": [\"profileSummary\", \"recommendedServiceTier\", \"advisorMatchRanking\", \"conversationStarters\", \"riskFlags\", \"priorityScore\", \"priorityReasoning\", \"documentsToRequest\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        912,
+        656
+      ],
+      "id": "6e7cd236-c84d-44f1-9dcf-23c7971c8c69",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge enrichment results with lead data for Airtable update\nconst agentOutput = $('Lead Enrichment Agent').first().json;\nconst lead = $('Verify Lead Status').first().json;\n\n// Agent output may be at top level or nested under .output\nconst enrichment = agentOutput.output ? (typeof agentOutput.output === 'string' ? JSON.parse(agentOutput.output) : agentOutput.output) : agentOutput;\n\n// Top advisor for availability check\nconst topAdvisor = enrichment.advisorMatchRanking && enrichment.advisorMatchRanking[0]\n  ? enrichment.advisorMatchRanking[0]\n  : { advisorId: 'ADV001', advisorName: 'Michael Torres' };\n\nreturn [{\n  json: {\n    id: lead.airtableRecordId,\n    leadId: lead.leadId,\n    status: 'PENDING_REVIEW',\n    profileSummary: enrichment.profileSummary || '',\n    recommendedServiceTier: JSON.stringify(enrichment.recommendedServiceTier || {}),\n    advisorMatchRanking: JSON.stringify(enrichment.advisorMatchRanking || []),\n    conversationStarters: JSON.stringify(enrichment.conversationStarters || []),\n    riskFlags: JSON.stringify(enrichment.riskFlags || []),\n    documentsToRequest: JSON.stringify(enrichment.documentsToRequest || ['Recent bank statements (all accounts)', 'Most recent Notice of Assessment (NOA) from CRA', 'Previous year\\'s tax return']),\n    priorityScore: enrichment.priorityScore || 'MEDIUM',\n    priorityReasoning: enrichment.priorityReasoning || '',\n    topAdvisorId: topAdvisor.advisorId,\n    topAdvisorName: topAdvisor.advisorName,\n    preferredDate: lead.preferredDate || '',\n    preferredTime: lead.preferredTime || '',\n    backupDate: lead.backupDate || '',\n    backupTime: lead.backupTime || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        256
+      ],
+      "id": "fad64306-0364-4b57-a37e-81fd05ff291a",
+      "name": "Merge Enrichment Results"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -784,
+        768
+      ],
+      "id": "29c7568e-6e5f-439c-bc54-4e8110796573",
+      "name": "Catch WF2 Errors"
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorData = $input.first().json;\nreturn [{ json: { error: errorData, action: 'ENRICHMENT_FAILED' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        768
+      ],
+      "id": "97f9c3b3-0617-4247-84e4-2780ec1da190",
+      "name": "Handle Enrichment Error"
+    },
+    {
+      "parameters": {
+        "sendTo": "smuharsk@gmail.com",
+        "subject": "WF2 Enrichment FAILED — NorthStar Pipeline",
+        "message": "=AI Enrichment failed at {{ $now.toISO() }}\n\nError: {{ JSON.stringify($json.error) }}\n\nLead may need manual review.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -304,
+        768
+      ],
+      "id": "bd4705b6-cbeb-4f7a-a36f-771b719c22af",
+      "name": "Send WF2 Error Alert",
+      "webhookId": "5fbacab5-a916-42af-99dc-9a676572c249",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "He1n1ppcpk5MRFOo",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Merge Enrichment Results').first().json.leadId }}",
+            "topAdvisorId": "={{ $('Merge Enrichment Results').first().json.topAdvisorId }}",
+            "preferredDate": "={{ $('Merge Enrichment Results').first().json.preferredDate }}",
+            "preferredTime": "={{ $('Merge Enrichment Results').first().json.preferredTime }}",
+            "backupDate": "={{ $('Merge Enrichment Results').first().json.backupDate }}",
+            "backupTime": "={{ $('Merge Enrichment Results').first().json.backupTime }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "type": "string"
+            },
+            {
+              "id": "topAdvisorId",
+              "displayName": "topAdvisorId",
+              "type": "string"
+            },
+            {
+              "id": "preferredDate",
+              "displayName": "preferredDate",
+              "type": "string"
+            },
+            {
+              "id": "preferredTime",
+              "displayName": "preferredTime",
+              "type": "string"
+            },
+            {
+              "id": "backupDate",
+              "displayName": "backupDate",
+              "type": "string"
+            },
+            {
+              "id": "backupTime",
+              "displayName": "backupTime",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "trigger-wf3",
+      "name": "Trigger WF3 - Availability",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "={{ $json.status }}",
+            "priorityScore": "={{ $json.priorityScore }}",
+            "priorityReasoning": "={{ $json.priorityReasoning }}",
+            "profileSummary": "={{ $json.profileSummary }}",
+            "recommendedServiceTier": "={{ $json.recommendedServiceTier }}",
+            "advisorMatchRanking": "={{ $json.advisorMatchRanking }}",
+            "riskFlags": "={{ $json.riskFlags }}",
+            "conversationStarters": "={{ $json.conversationStarters }}",
+            "documentsToRequest": "={{ $json.documentsToRequest }}",
+            "assignedAdvisorId": "={{ $json.topAdvisorId }}",
+            "assignedAdvisorName": "={{ $json.topAdvisorName }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-airtable-enrichment",
+      "name": "Update Lead in Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1040,
+        256
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "NorthStar Wealth Advisory internal policy documents covering: service tier eligibility criteria and pricing, client suitability assessment frameworks, KYC requirements, risk tolerance vs risk capacity alignment rules, advisor specialization details and caseload policies, geographic and regulatory requirements by province, vulnerable client indicators, priority scoring criteria, and lead qualification standards. Query this tool whenever you need to assess suitability, determine service tier, evaluate risk flags, rank advisors, or generate conversation starters based on firm-specific policies.",
+        "topK": 6
+      },
+      "id": "wf2-policy-tool",
+      "name": "Firm Policy Knowledge",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1.1,
+      "position": [
+        544,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "pineconeIndex": {
+          "__rl": true,
+          "mode": "list",
+          "value": "northstar-policies",
+          "cachedResultName": "northstar-policies"
+        },
+        "options": {}
+      },
+      "id": "wf2-pinecone-retrieval",
+      "name": "Pinecone (Policy Retrieval)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1,
+      "position": [
+        416,
+        896
+      ],
+      "credentials": {
+        "pineconeApi": {
+          "id": "yIemhxUEm2rJwniw",
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "id": "wf2-embeddings-retrieval",
+      "name": "Embeddings Gemini (Retrieval)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        336,
+        1056
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        768,
+        880
+      ],
+      "id": "7454ef60-819f-47ca-ae50-4938124377cb",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called from WF1": {
+      "main": [
+        [
+          {
+            "node": "Get Lead from Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead from Airtable": {
+      "main": [
+        [
+          {
+            "node": "Verify Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Get Advisors Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Advisors Cache": {
+      "main": [
+        [
+          {
+            "node": "Get Service Tiers Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Service Tiers Cache": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead + Business Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Lead + Business Data": {
+      "main": [
+        [
+          {
+            "node": "Lead Enrichment Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Enrichment Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge Enrichment Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash (Enrichment)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Lead Enrichment Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Lead Enrichment Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF2 Errors": {
+      "main": [
+        [
+          {
+            "node": "Handle Enrichment Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Enrichment Error": {
+      "main": [
+        [
+          {
+            "node": "Send WF2 Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Enrichment Results": {
+      "main": [
+        [
+          {
+            "node": "Update Lead in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Trigger WF3 - Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Gemini (Retrieval)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone (Policy Retrieval)",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone (Policy Retrieval)": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Firm Policy Knowledge",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firm Policy Knowledge": {
+      "ai_tool": [
+        [
+          {
+            "node": "Lead Enrichment Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Firm Policy Knowledge",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "139a10b1-d9df-4e86-b021-32513c631b3f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "HfZqG2gp6J25webY",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:04:19.484Z",
+      "updatedAt": "2026-02-24T16:04:19.484Z",
+      "id": "fqxBdrrRdmbeHjuo",
+      "name": "enrichment"
+    },
+    {
+      "createdAt": "2026-02-24T16:04:19.497Z",
+      "updatedAt": "2026-02-24T16:04:19.497Z",
+      "id": "hVCyWUtCK6xEiHiC",
+      "name": "ai"
+    }
+  ]
+}

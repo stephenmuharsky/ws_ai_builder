@@ -1,0 +1,648 @@
+{
+  "name": "WF9 - Business Data Cache Refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF9: BUSINESS DATA CACHE REFRESH\n\n**FIXED:** All 5 Airtable fetches run in PARALLEL from a single trigger item.\nPrevious version chained them causing 42,000+ item explosion.",
+        "height": 200,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "15b3e3f1-5aea-4d45-92a3-6c820f86539d",
+      "name": "WF9 Overview"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {},
+            {
+              "triggerAtHour": 6
+            },
+            {
+              "triggerAtHour": 12
+            },
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        304
+      ],
+      "id": "7cf0f5e0-9257-41d9-bc4f-a42e4dad0c55",
+      "name": "Every 6 Hours"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cache-refresh",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        512
+      ],
+      "id": "e1d996a5-cb6d-405b-8316-e51de74ef1cf",
+      "name": "Webhook - Cache Refresh",
+      "webhookId": "10dfad0d-c4dc-4d3a-95b5-bd3e70e31481"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        208,
+        704
+      ],
+      "id": "6455ce00-ce77-4d21-8441-baa9c03abedb",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { trigger: 'cache_refresh', timestamp: new Date().toISOString() } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        512
+      ],
+      "id": "set-trigger-flag",
+      "name": "Set Trigger Flag"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblHTsE90vHoMv91I",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        768,
+        208
+      ],
+      "id": "075f2255-25be-4116-a457-90c6c51cb759",
+      "name": "Fetch Advisor Info (Airtable)",
+      "executeOnce": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblk9vQT3dDivYuo0",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        768,
+        400
+      ],
+      "id": "997c4745-6752-4610-860b-c4ce220e3d5e",
+      "name": "Fetch Consultation Services (Airtable)",
+      "executeOnce": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbliUX7QurrQwFNbQ",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        768,
+        576
+      ],
+      "id": "060c5f47-6499-4a54-a6c2-41e3a199c89c",
+      "name": "Fetch Advisor Availability (Airtable)",
+      "executeOnce": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblXKvNO3oEOUwabe",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        768,
+        752
+      ],
+      "id": "688fefaa-59f1-45c7-a2cb-2417c39327c5",
+      "name": "Fetch Configuration (Airtable)",
+      "executeOnce": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbltY5quYso4mq655",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        768,
+        928
+      ],
+      "id": "39260396-4e5b-4b51-9c4a-ebe2f7edd657",
+      "name": "Fetch Email Templates (Airtable)",
+      "executeOnce": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const advisorRows = $('Fetch Advisor Info (Airtable)').all().map(i => i.json);\nconst serviceRows = $('Fetch Consultation Services (Airtable)').all().map(i => i.json);\nconst availRows = $('Fetch Advisor Availability (Airtable)').all().map(i => i.json);\nconst configRows = $('Fetch Configuration (Airtable)').all().map(i => i.json);\nconst templateRows = $('Fetch Email Templates (Airtable)').all().map(i => i.json);\n\nconst advisors = advisorRows.map(r => ({\n  advisorId: r.advisorId,\n  name: r.name,\n  email: r.email,\n  calendarId: r.calendarId,\n  specializations: (r.specializations || '').split(',').map(s => s.trim()).filter(Boolean),\n  currentCaseload: Number(r.currentCaseload) || 0,\n  maxCaseload: Number(r.maxCaseload) || 25,\n  bio: r.bio || ''\n}));\n\nconst serviceTiers = serviceRows.map(r => ({\n  tierId: r.tierId,\n  tierName: r.tierName,\n  description: r.description,\n  qualifyingGoals: (r.qualifyingGoals || '').split(',').map(s => s.trim()).filter(Boolean),\n  minAssets: r.minAssets\n}));\n\nconst availability = availRows.map(r => ({\n  date: r.date,\n  advisorId: r.advisorId,\n  advisorName: r.advisorName,\n  workingHours: r.workingHours,\n  blockedTimes: r.blockedTimes || ''\n}));\n\nconst config = {};\nconfigRows.forEach(r => {\n  if (!r.key) return;\n  let val = r.value;\n  try { val = JSON.parse(val); } catch(e) {}\n  config[r.key] = val;\n});\n\nconst templates = {};\ntemplateRows.forEach(r => {\n  if (!r.templateKey) return;\n  templates[r.templateKey] = { subject: r.subject, body: r.body };\n});\n\nreturn [{\n  json: {\n    advisors: JSON.stringify(advisors),\n    serviceTiers: JSON.stringify(serviceTiers),\n    availability: JSON.stringify(availability),\n    config: JSON.stringify(config),\n    templates: JSON.stringify(templates),\n    refreshedAt: new Date().toISOString(),\n    keysCount: 5\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        576
+      ],
+      "id": "bf928f42-3ad2-4573-8618-dd4d8e06a40d",
+      "name": "Build Cache Objects",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "firm:advisors",
+        "value": "={{ $json.advisors }}",
+        "keyType": "string"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        208
+      ],
+      "id": "3f4599da-12a7-4a4e-8b08-30744ed76b83",
+      "name": "Cache Advisors",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "firm:service_tiers",
+        "value": "={{ $json.serviceTiers }}",
+        "keyType": "string"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        400
+      ],
+      "id": "629b8d0c-5918-42de-8269-e9cc3b9b0543",
+      "name": "Cache Service Tiers",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "firm:advisor_availability",
+        "value": "={{ $json.availability }}",
+        "keyType": "string"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        576
+      ],
+      "id": "18fda51b-3c17-486a-9a45-6ace0c5d1e6c",
+      "name": "Cache Availability",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "firm:config",
+        "value": "={{ $json.config }}",
+        "keyType": "string"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        752
+      ],
+      "id": "cbb50263-ec3f-4881-874c-a5bc41c170d5",
+      "name": "Cache Config",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "firm:email_templates",
+        "value": "={{ $json.templates }}",
+        "keyType": "string"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        928
+      ],
+      "id": "0db706a3-d334-4707-a83a-f0d3b39d78fa",
+      "name": "Cache Email Templates",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const refreshedAt = $('Build Cache Objects').first().json.refreshedAt;\nconst keysCount = $('Build Cache Objects').first().json.keysCount;\nreturn [{ json: { timestamp: refreshedAt, event: 'CACHE_REFRESH', details: `Refreshed ${keysCount} cache keys`, status: 'SUCCESS' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        752
+      ],
+      "id": "19c32ef0-de40-435a-b73b-a86012b59500",
+      "name": "Log Refresh Success"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblrmQkgKQg3Va9vA",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "event": "={{ $json.event }}",
+            "details": "={{ $json.details }}",
+            "status": "={{ $json.status }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1840,
+        752
+      ],
+      "id": "eb4bc9a2-7ffa-40c4-a54a-3c11348358f3",
+      "name": "Write System Log (Airtable)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        1152
+      ],
+      "id": "d374404a-bcb8-4c6a-8126-b13f8970e3ef",
+      "name": "Catch Errors"
+    },
+    {
+      "parameters": {
+        "sendTo": "smuharsk@gmail.com",
+        "subject": "WF9 Cache Refresh FAILED",
+        "message": "=Cache refresh failed at {{ $now.toISO() }}\n\nError: {{ $json.error?.message || JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1600,
+        1152
+      ],
+      "id": "0fa4bacd-45db-49de-99a2-d0b4f3f21c60",
+      "name": "Send Error Alert",
+      "webhookId": "8c1edc09-e381-4baa-b295-ec23162882ea",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Set Trigger Flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Cache Refresh": {
+      "main": [
+        [
+          {
+            "node": "Set Trigger Flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Trigger Flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Trigger Flag": {
+      "main": [
+        [
+          {
+            "node": "Fetch Advisor Info (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Email Templates (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Build Cache Objects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cache Objects": {
+      "main": [
+        [
+          {
+            "node": "Cache Advisors",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cache Service Tiers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cache Availability",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cache Config",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cache Email Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Config": {
+      "main": [
+        [
+          {
+            "node": "Log Refresh Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Refresh Success": {
+      "main": [
+        [
+          {
+            "node": "Write System Log (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch Errors": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Advisor Info (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Consultation Services (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Consultation Services (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Advisor Availability (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Advisor Availability (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Configuration (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Configuration (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Email Templates (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "81a4bf6a-8678-4677-994b-e1b6c65525cb",
+  "meta": {
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "MCqjHizlFzxsY7ZL",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:08:07.603Z",
+      "updatedAt": "2026-02-24T16:08:07.603Z",
+      "id": "uKKGeOhih8EGt66V",
+      "name": "cache"
+    }
+  ]
+}

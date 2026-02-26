@@ -1,0 +1,308 @@
+{
+  "name": "WF3 - Availability Pre-Check",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF3: AVAILABILITY PRE-CHECK\n\n**Trigger:** Called by WF2 after enrichment\n\n**Flow:**\n1. Receive leadId + advisor/time data from WF2\n2. Check availability against cached data\n3. Set availability status\n4. Find lead in Airtable, prep update\n5. Update lead status to PENDING_REVIEW\n\n**Simplified: Airtable is source of truth. No Redis for lead state.**",
+        "height": 340,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a1813bf5-a08d-46cc-a0f1-869b0a8ab306",
+      "name": "WF3 Overview"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "leadId"
+            },
+            {
+              "name": "topAdvisorId"
+            },
+            {
+              "name": "preferredDate"
+            },
+            {
+              "name": "preferredTime"
+            },
+            {
+              "name": "backupDate"
+            },
+            {
+              "name": "backupTime"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        400
+      ],
+      "id": "87ea07c3-499c-4eff-b3e9-703f9154e9b1",
+      "name": "Called from WF2"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:advisor_availability",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        640,
+        400
+      ],
+      "id": "5c86ee00-4d7f-4e8a-a4da-77baa3aafff2",
+      "name": "Get Availability Cache",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "firm:config",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        880,
+        400
+      ],
+      "id": "3e178dd2-3672-49af-8632-206bcc8cb328",
+      "name": "Get Config",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check availability for preferred and backup times\nconst input = $('Called from WF2').first().json;\nlet availRaw = $('Get Availability Cache').first().json;\nlet configRaw = $('Get Config').first().json;\n\nconst leadId = input.leadId || input.body?.leadId || '';\nif (!leadId) throw new Error('No leadId received from WF2. Input keys: ' + Object.keys(input).join(', '));\n\n// Parse Redis values with null safety\nlet availability = [];\nlet config = {};\n\ntry {\n  if (typeof availRaw === 'string' && availRaw) availability = JSON.parse(availRaw);\n  else if (availRaw && availRaw.data) availability = JSON.parse(availRaw.data);\n  else if (availRaw && availRaw.propertyName && availRaw.propertyName !== 'null') availability = JSON.parse(availRaw.propertyName);\n} catch(e) { availability = []; }\n\ntry {\n  if (typeof configRaw === 'string' && configRaw) config = JSON.parse(configRaw);\n  else if (configRaw && configRaw.data) config = JSON.parse(configRaw.data);\n  else if (configRaw && configRaw.propertyName && configRaw.propertyName !== 'null') config = JSON.parse(configRaw.propertyName);\n} catch(e) { config = {}; }\n\nconst duration = Number(config.consultation_duration_minutes) || 60;\nconst buffer = Number(config.consultation_buffer_minutes) || 15;\nconst totalBlock = duration + buffer;\n\nfunction timeToMinutes(timeStr) {\n  if (!timeStr) return 0;\n  const [h, m] = timeStr.split(':').map(Number);\n  return h * 60 + (m || 0);\n}\n\nfunction checkSlot(date, time, advisorId) {\n  if (!date || !time) return { available: false, reason: 'missing_data' };\n  if (!availability || availability.length === 0) return { available: false, reason: 'no_availability_data' };\n  const row = availability.find(r => r.date === date && r.advisorId === advisorId);\n  if (!row) return { available: false, reason: 'no_availability_data' };\n  if (row.workingHours === 'OFF') return { available: false, reason: 'day_off' };\n  const [startH, endH] = row.workingHours.split('-').map(s => s.trim());\n  const workStart = timeToMinutes(startH);\n  const workEnd = timeToMinutes(endH);\n  const reqStart = timeToMinutes(input.preferredTime || time);\n  const reqEnd = reqStart + totalBlock;\n  if (reqStart < workStart || reqEnd > workEnd) return { available: false, reason: 'outside_hours' };\n  return { available: true };\n}\n\nconst preferred = checkSlot(input.preferredDate, input.preferredTime, input.topAdvisorId);\n\nlet result;\nif (preferred.available) {\n  result = {\n    availabilityStatus: 'PREFERRED_AVAILABLE',\n    suggestedBooking: JSON.stringify({ advisorId: input.topAdvisorId, date: input.preferredDate, time: input.preferredTime })\n  };\n} else {\n  const backup = checkSlot(input.backupDate, input.backupTime, input.topAdvisorId);\n  if (backup.available) {\n    result = {\n      availabilityStatus: 'BACKUP_AVAILABLE',\n      suggestedBooking: JSON.stringify({ advisorId: input.topAdvisorId, date: input.backupDate, time: input.backupTime })\n    };\n  } else {\n    result = {\n      availabilityStatus: 'SCHEDULING_REQUIRED',\n      suggestedBooking: ''\n    };\n  }\n}\n\nreturn [{ json: { leadId: leadId, ...result } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        400
+      ],
+      "id": "72f2cb1a-6a1c-4234-8587-572d99231f76",
+      "name": "Check Preferred & Backup Availability"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1360,
+        400
+      ],
+      "id": "ef2a81da-291b-4152-9ae4-57e71c89e4b0",
+      "name": "Find Lead in Airtable",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prep the Airtable update with correct record ID\nconst avail = $('Check Preferred & Backup Availability').first().json;\nconst airtableRecord = $('Find Lead in Airtable').first().json;\n\n// Get the Airtable record id\nconst recordId = airtableRecord.id;\n\nif (!recordId) {\n  throw new Error('Could not find lead ' + avail.leadId + ' in Airtable');\n}\n\nreturn [{\n  json: {\n    id: recordId,\n    status: 'PENDING_REVIEW',\n    availabilityStatus: avail.availabilityStatus,\n    suggestedBooking: avail.suggestedBooking || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        400
+      ],
+      "id": "prep-airtable-update",
+      "name": "Prep Airtable Update"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "={{ $json.status }}",
+            "availabilityStatus": "={{ $json.availabilityStatus }}",
+            "suggestedBooking": "={{ $json.suggestedBooking }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1840,
+        400
+      ],
+      "id": "cbab659e-e759-4d56-86bb-cb6963189d23",
+      "name": "Update Lead in Airtable (Status)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called from WF2": {
+      "main": [
+        [
+          {
+            "node": "Get Availability Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability Cache": {
+      "main": [
+        [
+          {
+            "node": "Get Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Config": {
+      "main": [
+        [
+          {
+            "node": "Check Preferred & Backup Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Preferred & Backup Availability": {
+      "main": [
+        [
+          {
+            "node": "Find Lead in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Prep Airtable Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Airtable Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead in Airtable (Status)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "583444be-83e1-4983-ab1b-8b4935c26b4f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "He1n1ppcpk5MRFOo",
+  "tags": [
+    {
+      "createdAt": "2026-02-24T16:03:56.865Z",
+      "updatedAt": "2026-02-24T16:03:56.865Z",
+      "id": "JftEfkiGmHhZofR4",
+      "name": "northstar"
+    },
+    {
+      "createdAt": "2026-02-24T16:03:56.884Z",
+      "updatedAt": "2026-02-24T16:03:56.884Z",
+      "id": "eCDeIyZWB5Yghn4f",
+      "name": "airtable"
+    },
+    {
+      "createdAt": "2026-02-24T16:04:42.222Z",
+      "updatedAt": "2026-02-24T16:04:42.222Z",
+      "id": "oJ0KVFJMl5XYBeH9",
+      "name": "availability"
+    }
+  ]
+}

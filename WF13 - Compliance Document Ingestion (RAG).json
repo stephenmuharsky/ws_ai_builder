@@ -1,0 +1,387 @@
+{
+  "name": "WF13 - Compliance Document Ingestion (RAG)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF13 - Compliance Document Ingestion (RAG)\n\n**Purpose:** Watches a Google Drive folder for new/updated compliance documents and embeds them into Pinecone vector store for use by WF2 (enrichment) and WF11 (guardrails).\n\n**Based on template by Mihai Farcas** (@mihailtd). View at: https://n8n.io/workflows/2753\n\n**Flow:**\n1. Google Drive Trigger detects new/updated files in 'NorthStar Compliance' folder\n2. Downloads the file (PDF, DOCX, etc.)\n3. Loads document content via Default Data Loader\n4. Splits into chunks (1000 chars, 200 overlap)\n5. Embeds with Google Gemini text-embedding-004\n6. Inserts into Pinecone index 'northstar-policies'\n\n**Credentials needed:** Google Drive OAuth2, Pinecone API, Google Gemini API",
+        "height": 360,
+        "width": 560
+      },
+      "id": "sn-wf13",
+      "name": "WF13 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ERGkYZs-GOntYtP2vCHJ7Y1jM5yJhmt0"
+        },
+        "event": "fileCreated",
+        "options": {
+          "fileType": "all"
+        }
+      },
+      "id": "wf13-trigger-created",
+      "name": "New Compliance Doc",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        224,
+        128
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "5BB7fi2VhZAQm1VG",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ERGkYZs-GOntYtP2vCHJ7Y1jM5yJhmt0"
+        },
+        "event": "fileUpdated",
+        "options": {}
+      },
+      "id": "wf13-trigger-updated",
+      "name": "Updated Compliance Doc",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        224,
+        448
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "5BB7fi2VhZAQm1VG",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "wf13-manual",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "options": {
+          "fileName": "={{ $json.name }}"
+        }
+      },
+      "id": "wf13-download",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        480,
+        448
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "5BB7fi2VhZAQm1VG",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "pineconeIndex": {
+          "__rl": true,
+          "mode": "list",
+          "value": "northstar-policies",
+          "cachedResultName": "northstar-policies"
+        },
+        "options": {}
+      },
+      "id": "wf13-pinecone-insert",
+      "name": "Pinecone Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1,
+      "position": [
+        752,
+        448
+      ],
+      "credentials": {
+        "pineconeApi": {
+          "id": "yIemhxUEm2rJwniw",
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "id": "wf13-embeddings",
+      "name": "Embeddings Google Gemini",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        640,
+        688
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "binary",
+        "binaryMode": "specificField",
+        "options": {}
+      },
+      "id": "wf13-data-loader",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "chunkOverlap": 200,
+        "options": {}
+      },
+      "id": "wf13-text-splitter",
+      "name": "Recursive Character Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        880
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "wf13-error-trigger",
+      "name": "Catch WF13 Errors",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        480,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const error = $input.first().json;\nreturn [{\n  json: {\n    workflow: 'WF13',\n    error: error.message || 'Unknown ingestion error',\n    timestamp: new Date().toISOString(),\n    context: 'Compliance document ingestion failed'\n  }\n}];"
+      },
+      "id": "wf13-error-handler",
+      "name": "Handle Ingestion Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "smuharsk@gmail.com",
+        "subject": "=⚠️ WF13 Ingestion Error - {{ $json.timestamp }}",
+        "message": "=Compliance document ingestion failed.\n\nError: {{ $json.error }}\nContext: {{ $json.context }}\nTimestamp: {{ $json.timestamp }}\n\nPlease check the n8n execution log for details.",
+        "options": {}
+      },
+      "id": "wf13-error-email",
+      "name": "Send Ingestion Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        1040
+      ],
+      "webhookId": "a0826ea7-32b2-4651-99bc-54d40512ff2f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulate the Google Drive trigger output for manual testing\n// This targets the NorthStar Comprehensive Policy Manual PDF\nreturn [{\n  json: {\n    id: '1th3flQWlVI2VDpCp8HdJP5t_SL_lQoRU',\n    name: 'NorthStar_Comprehensive_Policy_Manual.pdf',\n    mimeType: 'application/pdf'\n  }\n}];"
+      },
+      "id": "wf13-manual-file",
+      "name": "Set Test File ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        736
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "New Compliance Doc": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Updated Compliance Doc": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch WF13 Errors": {
+      "main": [
+        [
+          {
+            "node": "Handle Ingestion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Ingestion Error": {
+      "main": [
+        [
+          {
+            "node": "Send Ingestion Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Test File ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Test File ID": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Toronto",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "versionId": "f836323c-20f3-42c1-95aa-37f3c70c0cc3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "2FdVk5XAm8Bf6hQM",
+  "tags": []
+}

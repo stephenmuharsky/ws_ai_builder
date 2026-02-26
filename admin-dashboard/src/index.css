@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply font-body text-navy-700 bg-surface-light;
+  }
+  ::selection {
+    @apply bg-accent-green/20 text-navy-900;
+  }
+}
+
+@layer components {
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium
+           transition-all duration-150 cursor-pointer;
+  }
+  .sidebar-link.active {
+    @apply bg-white text-navy-700 shadow-sm;
+  }
+  .sidebar-link:not(.active) {
+    @apply text-navy-400 hover:text-navy-600 hover:bg-white/50;
+  }
+
+  .metric-card {
+    @apply bg-white rounded-xl border border-navy-100 p-5 flex flex-col;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide;
+  }
+  .badge-high {
+    @apply bg-red-50 text-red-700 border border-red-200;
+  }
+  .badge-medium {
+    @apply bg-amber-50 text-amber-700 border border-amber-200;
+  }
+  .badge-low {
+    @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
+  }
+
+  .btn-approve {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+           bg-accent-green text-white rounded-lg
+           hover:bg-accent-green-dark transition-colors;
+  }
+  .btn-reject {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+           bg-red-50 text-red-700 border border-red-200 rounded-lg
+           hover:bg-red-100 transition-colors;
+  }
+  .btn-secondary-sm {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium
+           bg-white text-navy-600 border border-navy-200 rounded-lg
+           hover:bg-navy-50 transition-colors;
+  }
+  .btn-override {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+           bg-amber-50 text-amber-700 border border-amber-200 rounded-lg
+           hover:bg-amber-100 transition-colors;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4;
+  }
+  .modal-content {
+    @apply bg-white rounded-xl shadow-2xl w-full max-w-md border border-navy-100;
+  }
+
+  /* WF10: Consultation Prep Brief */
+  .prep-brief-container {
+    @apply bg-white rounded-xl border border-navy-100 shadow-sm
+           overflow-hidden;
+  }
+
+  /* WF11: Nurture Email Card */
+  .nurture-email-container {
+    @apply bg-white rounded-xl border border-navy-100 shadow-sm
+           overflow-hidden;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
