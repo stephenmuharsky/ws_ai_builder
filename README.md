@@ -98,7 +98,7 @@ CLIENT INTAKE FORM (React)          ADMIN DASHBOARD (React)
 | WF5 | Email Outreach & Booking | Sends confirmation or outreach email, creates appointment, triggers WF10+WF11 |
 | WF6 | Inbound Email Processing | AI parses client email replies — books, cancels, answers questions, or escalates |
 | WF7 | Follow-Up Cadence | Automated reminders at 48h and 96h; marks unresponsive at 7 days; sends disqualification rejection emails after 48h grace period expires |
-| WF8 | Rejection Email Generation | AI-personalized rejection email based on specific reason |
+| WF8 | Rejection Email Generation | Deterministic rejection email templates — no AI. Code node selects template + resources based on rejection reason and client's stated goals. Ensures consistency, auditability, and zero hallucination risk for client-facing rejection communications. |
 | WF9 | Business Data Cache Refresh | Syncs Airtable config, advisors, services, and templates to Redis cache |
 | WF10 | Consultation Prep Brief Generator | AI generates comprehensive meeting prep (executive summary, agenda, goal analysis, psychology notes, red flags) |
 | WF11 | Pre-Meeting Nurture Email Drafts | AI drafts pre-meeting email with compliance guardrails from RAG context |
@@ -270,6 +270,9 @@ npm run dev                 # http://localhost:5174
 **Human-in-the-loop at every AI output.** The admin decides on lead approval. The advisor reviews and edits the nurture email before sending. The prep brief is presented as decision support, not a directive. AI enhances the human — it doesn't replace judgment.
 
 **Automated conflict resolution.** When a preferred time slot isn't available, the system doesn't just flag it — it automatically initiates email outreach with alternative options, processes the client's reply with AI intent parsing, and books the meeting once agreement is reached.
+
+**Deterministic rejection emails.** Rejection emails use Code-node templates, not AI generation. Rejected prospects are potential future clients — a tone-deaf or hallucinated AI email is a 
+permanent brand and compliance risk. The same deterministic principle that governs disqualification rules also governs rejection communication: when the stakes are high and the output space is bounded, use code, not AI.
 
 ---
 

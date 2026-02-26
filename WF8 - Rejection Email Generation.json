@@ -3,10 +3,10 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# WF8: REJECTION EMAIL GENERATION\n\n**Trigger:** Called by WF4 when admin rejects a lead\n\n**AI generates personalized rejection/nurture email based on reason:**\n- below_threshold_on_review → Nurturing tone, free resources\n- not_a_fit → Redirecting tone, alternative suggestions\n- incomplete_info → Inviting tone, request more info\n- other → Gracious general response\n\n**Max 120 words. Never mention AI or scoring.**",
+        "content": "# WF8: REJECTION EMAIL GENERATION (DETERMINISTIC)\n\n**Trigger:** Called by WF4 or WF7 (48h grace period expiry)\n\n**NO AI — Code node builds email from templates per rejection reason:**\n- below_threshold_on_review → Nurturing + goal-targeted resources\n- not_a_fit → Redirecting + alternative suggestions\n- incomplete_info → Inviting + reapply CTA\n- other → Gracious general response\n\n**Why no AI:** Client-facing rejection = high-stakes. Templates ensure consistency, auditability, zero hallucination risk.",
         "height": 300,
-        "width": 480,
-        "color": 4
+        "width": 520,
+        "color": 5
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -76,56 +76,6 @@
       ],
       "id": "9ace8f04-1777-4b40-9ecf-f8cfed758143",
       "name": "Prep Rejection Context"
-    },
-    {
-      "parameters": {
-        "text": "=Rejection reason: {{ $json.rejectionReason }}\nCustom note from admin: {{ $json.customNote }}\nClient name: {{ $json.firstName }}\nFinancial goals: {{ $json.financialGoals }}\nAsset range: {{ $json.investableAssets }}",
-        "options": {
-          "systemMessage": "You compose rejection/nurture emails for NorthStar Wealth Advisory, a financial advisory firm. Output email body ONLY as plain text — no JSON, no markdown.\n\n## REJECTION TYPES AND TONE\n\n### below_threshold_on_review\nTone: Nurturing. \"We'd love to work with you in the future.\"\nInclude: 2-3 free resources relevant to their goals. Invitation to reconnect.\n- Retirement → link to retirement calculator\n- Tax → CRA resources\n- General → Wealthsimple Invest, Financial Planning Standards Council\n\n### not_a_fit\nTone: Redirecting. \"We want to make sure you get the right help.\"\nInclude: 1-2 alternative suggestions. Debt management → credit counseling referral.\n\n### incomplete_info\nTone: Inviting. \"We'd love to learn more.\"\nInclude: Clear call-to-action to reply or resubmit.\n\n### other\nTone: Gracious. Generic thank-you with open door.\n\n## RULES\n- First name greeting only\n- Maximum 120 words\n- NEVER mention AI, scoring, algorithms, or internal processes\n- NEVER be specific about why rejected\n- Always end with forward-looking positive note\n- Plain text only"
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.7,
-      "position": [
-        1120,
-        304
-      ],
-      "id": "f4c473af-238e-4df5-bab0-620ad74d5793",
-      "name": "Rejection Email Composer"
-    },
-    {
-      "parameters": {
-        "options": {
-          "temperature": 0.4
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [
-        1088,
-        496
-      ],
-      "id": "86348e62-1086-4bb5-8956-9bd456923282",
-      "name": "Gemini (Rejection)",
-      "credentials": {
-        "googlePalmApi": {
-          "id": "gKOxHvioCsyTdrwX",
-          "name": "Google Gemini(PaLM) Api account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Build email with appropriate subject based on rejection type\nconst context = $('Prep Rejection Context').first().json;\nconst aiBody = $('Rejection Email Composer').first().json.output || $('Rejection Email Composer').first().json.text || '';\n\nconst subjectMap = {\n  'below_threshold_on_review': 'Resources to help you on your financial journey',\n  'not_a_fit': 'Some recommendations for your financial goals',\n  'incomplete_info': \"We'd love to learn more\",\n  'other': 'Thank you for your interest'\n};\n\nconst subject = (subjectMap[context.rejectionReason] || subjectMap['other']) + ' — NorthStar Wealth Advisory';\n\nreturn [{ json: {\n  to: context.email,\n  subject,\n  body: aiBody,\n  leadId: context.leadId\n} }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1424,
-        304
-      ],
-      "id": "1cc56bb7-5fb4-4dd1-a393-284b5d6c2e1b",
-      "name": "Build Email"
     },
     {
       "parameters": {
@@ -218,6 +168,19 @@
           "name": "Gmail account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// DETERMINISTIC REJECTION EMAIL BUILDER\n// No AI — templates are hardcoded per rejection reason with variable substitution.\n// This is a client-facing email about a high-stakes decision. AI must not compose it.\n\nconst ctx = $input.first().json;\nconst firstName = ctx.firstName || 'there';\nconst goals = ctx.financialGoals || '';\nconst assets = ctx.investableAssets || '';\nconst customNote = ctx.customNote || '';\nconst reason = ctx.rejectionReason || 'other';\n\n// Parse goals for resource targeting\nconst goalList = goals.toLowerCase();\nconst hasRetirement = goalList.includes('retirement');\nconst hasTax = goalList.includes('tax');\nconst hasDebt = goalList.includes('debt');\nconst hasEducation = goalList.includes('education');\nconst hasEstate = goalList.includes('estate');\n\n// Build targeted resources based on goals\nfunction getResources() {\n  const resources = [];\n  if (hasRetirement) resources.push('• Canada.ca Retirement Planning Hub — canada.ca/retirement');\n  if (hasTax) resources.push('• CRA Tax Planning Resources — canada.ca/taxes');\n  if (hasDebt) resources.push('• Credit Counselling Canada — creditcounsellingcanada.ca');\n  if (hasEducation) resources.push('• RESP Information (Canada.ca) — canada.ca/resp');\n  if (hasEstate) resources.push('• Estate Planning Council of Canada — epcc.ca');\n  // Always include general resources\n  resources.push('• Financial Planning Standards Council — fpcanada.ca');\n  if (resources.length < 3) resources.push('• Wealthsimple Learn — wealthsimple.com/learn');\n  return resources.slice(0, 3).join('\\n');\n}\n\nlet body = '';\n\nswitch (reason) {\n  case 'below_threshold_on_review':\n    body = `Hi ${firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory. We appreciate you taking the time to share your financial goals with us.\\n\\nAfter reviewing your application, we believe you may be better served at this stage by resources that are specifically designed for your current financial position. Here are some excellent options we recommend:\\n\\n${getResources()}\\n\\nThese are genuinely helpful starting points, and we encourage you to explore them.\\n\\nAs your financial situation evolves, we would welcome the opportunity to work with you in the future. Please don't hesitate to reach out again when you're ready.\\n\\nWarm regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n\n  case 'not_a_fit':\n    body = `Hi ${firstName},\\n\\nThank you for your interest in NorthStar Wealth Advisory. We appreciate you sharing your financial goals with us.\\n\\nAfter careful consideration, we want to make sure you receive the best possible guidance for your specific needs. Based on your goals, we believe the following resources may be a better fit at this time:\\n\\n${getResources()}\\n\\nWe want to ensure you get the right support, and these organizations specialize in areas that align closely with what you're looking for.\\n\\nWe wish you all the best on your financial journey, and our door is always open should your needs change in the future.\\n\\nBest regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n\n  case 'incomplete_info':\n    body = `Hi ${firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory.\\n\\nWe reviewed your application but unfortunately weren't able to move forward with the information provided. We'd love to learn more about your situation so we can properly assess how we might help.\\n\\nIf you're still interested, you're welcome to submit a new application with additional details about your financial goals and current situation. We're here to help and want to make sure we can provide the best possible guidance.\\n\\nYou can reapply at any time through our website.\\n\\nBest regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n\n  default: // 'other' and any unrecognized reason\n    body = `Hi ${firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory. We truly appreciate your interest in our services.\\n\\nAfter reviewing your application, we're unable to move forward at this time. We understand this may be disappointing, and we want you to know that this doesn't reflect on your financial goals or potential.\\n\\nHere are some resources that may be helpful as you continue your financial planning journey:\\n\\n• Financial Planning Standards Council — fpcanada.ca\\n• Wealthsimple Learn — wealthsimple.com/learn\\n• Canada.ca Financial Planning — canada.ca/financial-planning\\n\\nShould your circumstances change in the future, we would be happy to hear from you again.\\n\\nWarm regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n}\n\n// Subject line map (deterministic)\nconst subjectMap = {\n  'below_threshold_on_review': 'Resources to help you on your financial journey',\n  'not_a_fit': 'Some recommendations for your financial goals',\n  'incomplete_info': \"We'd love to learn more\",\n  'other': 'Thank you for your interest'\n};\n\nconst subject = (subjectMap[reason] || subjectMap['other']) + ' — NorthStar Wealth Advisory';\n\nreturn [{ json: {\n  to: ctx.email,\n  subject,\n  body,\n  leadId: ctx.leadId\n} }];"
+      },
+      "id": "deterministic-rejection-email",
+      "name": "Build Rejection Email (Deterministic)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        304
+      ]
     }
   ],
   "pinData": {},
@@ -238,50 +201,6 @@
         [
           {
             "node": "Prep Rejection Context",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prep Rejection Context": {
-      "main": [
-        [
-          {
-            "node": "Rejection Email Composer",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Rejection Email Composer": {
-      "main": [
-        [
-          {
-            "node": "Build Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gemini (Rejection)": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Rejection Email Composer",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Email": {
-      "main": [
-        [
-          {
-            "node": "Send Rejection Email",
             "type": "main",
             "index": 0
           }
@@ -320,13 +239,35 @@
           }
         ]
       ]
+    },
+    "Prep Rejection Context": {
+      "main": [
+        [
+          {
+            "node": "Build Rejection Email (Deterministic)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rejection Email (Deterministic)": {
+      "main": [
+        [
+          {
+            "node": "Send Rejection Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "a76429aa-7052-4e19-a6eb-cf206aebf757",
+  "versionId": "c1890e81-6b22-42ae-98c5-e8749efef67c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
