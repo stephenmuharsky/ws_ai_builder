@@ -6,5 +6,6 @@ dist/
 *.md
 !README.md
 .claude/
+*.xlsx
 CANCUN NAILS MAIN*.json
 Booking Confirmation System*.json
