@@ -19,8 +19,8 @@
     },
     {
       "parameters": {
-        "content": "### DISQUALIFICATION RULES ENGINE\n\n**Rule 1 — Jurisdiction:** Province must be in firm:config.served_provinces\n**Rule 2 — Minimum Assets:** Mapped numeric value must be ≥ firm:config.min_assets_threshold\n**Rule 3 — Goal Mismatch:** At least one financialGoal must be in firm:config.offered_goal_types\n\n**Asset Mapping:**\nunder_25k → 12500 | 25k_100k → 62500 | 100k_250k → 175000\n250k_500k → 375000 | 500k_1m → 750000 | 1m_plus → 1500000\n\n**All rules are deterministic code — NO AI.**",
-        "height": 340,
+        "content": "### DISQUALIFICATION RULES ENGINE\n\n**Rule 1 — Jurisdiction:** Province must be in firm:config.served_provinces\n**Rule 2 — Minimum Assets:** Mapped numeric value must be >= firm:config.min_assets_threshold\n**Rule 3 — Goal Mismatch:** At least one financialGoal must be in firm:config.offered_goal_types\n\n**Goal comparison normalized (lowercase + underscores).**\n**Router uses disqualificationCount > 0 (avoids boolean coercion).**",
+        "height": 380,
         "width": 440,
         "color": 6
       },
@@ -69,7 +69,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================\n// VALIDATE INTAKE FORM DATA\n// ============================\nconst body = $input.first().json.body || $input.first().json;\n\nconst errors = [];\n\n// Required string fields\nconst requiredStrings = ['fullName', 'email', 'phone', 'province', 'investableAssets', 'annualIncome', 'investmentTimeline', 'riskTolerance', 'currentAdvisorSituation', 'preferredDate', 'preferredTime'];\nfor (const field of requiredStrings) {\n  if (!body[field] || String(body[field]).trim() === '') {\n    errors.push(`Missing required field: ${field}`);\n  }\n}\n\n// financialGoals must be non-empty array\nif (!body.financialGoals || !Array.isArray(body.financialGoals) || body.financialGoals.length === 0) {\n  errors.push('financialGoals must be a non-empty array');\n}\n\n// Consent must be true\nif (body.consentGiven !== true) {\n  errors.push('consentGiven must be true');\n}\n\n// Email validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (body.email && !emailRegex.test(body.email)) {\n  errors.push(`Invalid email format: ${body.email}`);\n}\n\n// Validate preferredDate is future & weekday\nif (body.preferredDate) {\n  const pDate = new Date(body.preferredDate + 'T12:00:00');\n  const now = new Date();\n  if (pDate <= now) errors.push('preferredDate must be in the future');\n  const day = pDate.getDay();\n  if (day === 0 || day === 6) errors.push('preferredDate must be a weekday');\n}\n\n// Validate preferredTime is within business hours\nif (body.preferredTime) {\n  const [h, m] = body.preferredTime.split(':').map(Number);\n  if (h < 9 || h >= 17) errors.push('preferredTime must be between 09:00 and 17:00');\n}\n\n// Validate enums\nconst validAssets = ['under_25k', '25k_100k', '100k_250k', '250k_500k', '500k_1m', '1m_plus'];\nif (body.investableAssets && !validAssets.includes(body.investableAssets)) {\n  errors.push(`Invalid investableAssets value: ${body.investableAssets}`);\n}\n\nconst validTimelines = ['under_1yr', '1_3yr', '3_5yr', '5_10yr', '10_plus'];\nif (body.investmentTimeline && !validTimelines.includes(body.investmentTimeline)) {\n  errors.push(`Invalid investmentTimeline value: ${body.investmentTimeline}`);\n}\n\nconst validRisk = ['conservative', 'moderate', 'aggressive'];\nif (body.riskTolerance && !validRisk.includes(body.riskTolerance)) {\n  errors.push(`Invalid riskTolerance value: ${body.riskTolerance}`);\n}\n\nreturn [{\n  json: {\n    valid: errors.length === 0,\n    errors,\n    formData: body\n  }\n}];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst errors = [];\nconst requiredStrings = ['fullName', 'email', 'phone', 'province', 'investableAssets', 'annualIncome', 'investmentTimeline', 'riskTolerance', 'currentAdvisorSituation', 'preferredDate', 'preferredTime'];\nfor (const field of requiredStrings) {\n  if (!body[field] || String(body[field]).trim() === '') {\n    errors.push(`Missing required field: ${field}`);\n  }\n}\nif (!body.financialGoals || !Array.isArray(body.financialGoals) || body.financialGoals.length === 0) {\n  errors.push('financialGoals must be a non-empty array');\n}\nif (body.consentGiven !== true) {\n  errors.push('consentGiven must be true');\n}\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (body.email && !emailRegex.test(body.email)) {\n  errors.push(`Invalid email format: ${body.email}`);\n}\nif (body.preferredDate) {\n  const pDate = new Date(body.preferredDate + 'T12:00:00');\n  const now = new Date();\n  if (pDate <= now) errors.push('preferredDate must be in the future');\n  const day = pDate.getDay();\n  if (day === 0 || day === 6) errors.push('preferredDate must be a weekday');\n}\nif (body.preferredTime) {\n  const [h, m] = body.preferredTime.split(':').map(Number);\n  if (h < 9 || h >= 17) errors.push('preferredTime must be between 09:00 and 17:00');\n}\nconst validAssets = ['under_25k', '25k_100k', '100k_250k', '250k_500k', '500k_1m', '1m_plus'];\nif (body.investableAssets && !validAssets.includes(body.investableAssets)) {\n  errors.push(`Invalid investableAssets value: ${body.investableAssets}`);\n}\nconst validTimelines = ['under_1yr', '1_3yr', '3_5yr', '5_10yr', '10_plus'];\nif (body.investmentTimeline && !validTimelines.includes(body.investmentTimeline)) {\n  errors.push(`Invalid investmentTimeline value: ${body.investmentTimeline}`);\n}\nconst validRisk = ['conservative', 'moderate', 'aggressive'];\nif (body.riskTolerance && !validRisk.includes(body.riskTolerance)) {\n  errors.push(`Invalid riskTolerance value: ${body.riskTolerance}`);\n}\nreturn [{ json: { valid: errors.length === 0, errors, formData: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -86,16 +86,18 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 2
           },
           "conditions": [
             {
               "id": "valid-check",
               "leftValue": "={{ $json.valid }}",
-              "rightValue": true,
+              "rightValue": "",
               "operator": {
                 "type": "boolean",
-                "operation": "true"
+                "operation": "true",
+                "singleValue": true
               }
             }
           ],
@@ -131,7 +133,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================\n// GENERATE LEAD ID\n// ============================\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst rand = String(Math.floor(1000 + Math.random() * 9000));\nconst leadId = `LEAD-${year}${month}${day}-${rand}`;\n\nconst formData = $('Validate Intake Form').first().json.formData;\n\n// Convert financialGoals array to comma-separated string for Airtable\nconst goalsStr = Array.isArray(formData.financialGoals) ? formData.financialGoals.join(',') : formData.financialGoals;\n\nreturn [{\n  json: {\n    leadId,\n    submittedAt: now.toISOString(),\n    ...formData,\n    financialGoals: goalsStr\n  }\n}];"
+        "jsCode": "const now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst rand = String(Math.floor(1000 + Math.random() * 9000));\nconst leadId = `LEAD-${year}${month}${day}-${rand}`;\nconst formData = $('Validate Intake Form').first().json.formData;\nconst goalsStr = Array.isArray(formData.financialGoals) ? formData.financialGoals.join(',') : formData.financialGoals;\nreturn [{ json: { leadId, submittedAt: now.toISOString(), ...formData, financialGoals: goalsStr } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -165,7 +167,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================\n// DISQUALIFICATION RULES ENGINE\n// Deterministic — NO AI\n// ============================\nconst lead = $('Generate Lead ID').first().json;\nlet configRaw = $('Get Firm Config').first().json;\n\n// Redis returns the value in different ways depending on version\nlet config;\nif (typeof configRaw === 'string') {\n  config = JSON.parse(configRaw);\n} else if (configRaw.data) {\n  config = JSON.parse(configRaw.data);\n} else {\n  config = configRaw;\n}\n\nconst reasons = [];\n\n// RULE 1: JURISDICTION CHECK\nconst servedProvinces = config.served_provinces || ['ON', 'BC', 'AB', 'QC'];\nif (!servedProvinces.includes(lead.province)) {\n  reasons.push('jurisdiction_not_served');\n}\n\n// RULE 2: MINIMUM ASSETS\nconst assetMap = {\n  'under_25k': 12500,\n  '25k_100k': 62500,\n  '100k_250k': 175000,\n  '250k_500k': 375000,\n  '500k_1m': 750000,\n  '1m_plus': 1500000\n};\nconst minThreshold = Number(config.min_assets_threshold) || 100000;\nconst assetValue = assetMap[lead.investableAssets] || 0;\nif (assetValue < minThreshold) {\n  reasons.push('below_asset_threshold');\n}\n\n// RULE 3: GOAL MISMATCH\nconst offeredGoals = config.offered_goal_types || [];\nconst goalsArray = lead.financialGoals ? lead.financialGoals.split(',').map(s => s.trim()) : [];\nconst hasMatchingGoal = goalsArray.some(g => offeredGoals.includes(g));\nif (!hasMatchingGoal) {\n  reasons.push('goal_mismatch');\n}\n\nreturn [{\n  json: {\n    disqualified: reasons.length > 0,\n    disqualificationReasons: reasons,\n    leadId: lead.leadId,\n    leadData: lead,\n    assetNumeric: assetValue,\n    config: {\n      servedProvinces,\n      minThreshold,\n      offeredGoals\n    }\n  }\n}];"
+        "jsCode": "// DISQUALIFICATION RULES ENGINE — Deterministic, NO AI\nconst lead = $('Generate Lead ID').first().json;\nlet configRaw = $('Get Firm Config').first().json;\nlet config;\nif (typeof configRaw === 'string') { config = JSON.parse(configRaw); }\nelse if (configRaw.data) { config = JSON.parse(configRaw.data); }\nelse { config = configRaw; }\n\nconst reasons = [];\n\n// RULE 1: JURISDICTION\nconst servedProvinces = config.served_provinces || ['ON', 'BC', 'AB', 'QC'];\nif (!servedProvinces.includes(lead.province)) { reasons.push('jurisdiction_not_served'); }\n\n// RULE 2: MINIMUM ASSETS\nconst assetMap = { 'under_25k': 12500, '25k_100k': 62500, '100k_250k': 175000, '250k_500k': 375000, '500k_1m': 750000, '1m_plus': 1500000 };\nconst minThreshold = Number(config.min_assets_threshold) || 100000;\nconst assetValue = assetMap[lead.investableAssets] || 0;\nif (assetValue < minThreshold) { reasons.push('below_asset_threshold'); }\n\n// RULE 3: GOAL MISMATCH — normalize both sides\nfunction normalizeGoal(g) { return g.trim().toLowerCase().replace(/\\s+/g, '_'); }\nlet offeredGoals = config.offered_goal_types || [];\nif (typeof offeredGoals === 'string') { try { offeredGoals = JSON.parse(offeredGoals); } catch(e) { offeredGoals = offeredGoals.split(','); } }\nconst normalizedOffered = offeredGoals.map(normalizeGoal);\nconst goalsArray = lead.financialGoals ? lead.financialGoals.split(',').map(s => s.trim()) : [];\nconst normalizedLeadGoals = goalsArray.map(normalizeGoal);\nconst hasMatchingGoal = normalizedLeadGoals.some(g => normalizedOffered.includes(g));\nif (!hasMatchingGoal) { reasons.push('goal_mismatch'); }\n\nreturn [{ json: { disqualified: reasons.length > 0, disqualificationCount: reasons.length, disqualificationReasons: reasons, leadId: lead.leadId, leadData: lead, assetNumeric: assetValue, config: { servedProvinces, minThreshold, offeredGoals: normalizedOffered } } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -184,11 +186,11 @@
               "conditions": {
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.disqualified }}",
-                    "rightValue": false,
+                    "leftValue": "={{ $json.disqualificationCount }}",
+                    "rightValue": 0,
                     "operator": {
-                      "type": "boolean",
-                      "operation": "false"
+                      "type": "number",
+                      "operation": "equals"
                     }
                   }
                 ]
@@ -198,11 +200,11 @@
               "conditions": {
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.disqualified }}",
-                    "rightValue": true,
+                    "leftValue": "={{ $json.disqualificationCount }}",
+                    "rightValue": 0,
                     "operator": {
-                      "type": "boolean",
-                      "operation": "true"
+                      "type": "number",
+                      "operation": "gt"
                     }
                   }
                 ]
@@ -221,15 +223,11 @@
         304
       ],
       "id": "1c2b3fd1-6fce-44d1-aa1b-b4a3976a3a55",
-      "name": "Disqualification Router",
-      "outputs": [
-        "Qualified",
-        "Disqualified"
-      ]
+      "name": "Disqualification Router"
     },
     {
       "parameters": {
-        "content": "## QUALIFIED PATH\n\n1. Initialize Redis lead state\n2. Create record in Airtable Leads (status: PENDING_ENRICHMENT)\n3. Respond 200 to form\n4. Trigger WF2 - AI Enrichment",
+        "content": "## QUALIFIED PATH",
         "height": 180,
         "width": 360,
         "color": 3
@@ -245,7 +243,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build Redis hash for qualified lead\nconst data = $('Disqualification Rules Engine').first().json;\nconst lead = data.leadData;\n\nreturn [{\n  json: {\n    key: `leadstate_${lead.leadId}`,\n    status: 'PENDING_ENRICHMENT',\n    leadId: lead.leadId,\n    fullName: lead.fullName,\n    email: lead.email,\n    phone: lead.phone || '',\n    province: lead.province,\n    investableAssets: lead.investableAssets,\n    annualIncome: lead.annualIncome,\n    financialGoals: lead.financialGoals,\n    investmentTimeline: lead.investmentTimeline,\n    riskTolerance: lead.riskTolerance,\n    currentAdvisorSituation: lead.currentAdvisorSituation,\n    preferredDate: lead.preferredDate || '',\n    preferredTime: lead.preferredTime || '',\n    backupDate: lead.backupDate || '',\n    backupTime: lead.backupTime || '',\n    freeText: lead.freeText || '',\n    submittedAt: lead.submittedAt,\n    followUpCount: '0'\n  }\n}];"
+        "jsCode": "const data = $('Disqualification Rules Engine').first().json;\nconst lead = data.leadData;\nreturn [{ json: { key: `leadstate_${lead.leadId}`, status: 'PENDING_ENRICHMENT', leadId: lead.leadId, fullName: lead.fullName, email: lead.email, phone: lead.phone || '', province: lead.province, investableAssets: lead.investableAssets, annualIncome: lead.annualIncome, financialGoals: lead.financialGoals, investmentTimeline: lead.investmentTimeline, riskTolerance: lead.riskTolerance, currentAdvisorSituation: lead.currentAdvisorSituation, preferredDate: lead.preferredDate || '', preferredTime: lead.preferredTime || '', backupDate: lead.backupDate || '', backupTime: lead.backupTime || '', freeText: lead.freeText || '', submittedAt: lead.submittedAt, followUpCount: '0' } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -315,667 +313,7 @@
             "followUpCount": 0
           },
           "matchingColumns": [],
-          "schema": [
-            {
-              "id": "leadId",
-              "displayName": "leadId",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "fullName",
-              "displayName": "fullName",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "email",
-              "displayName": "email",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "phone",
-              "displayName": "phone",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "province",
-              "displayName": "province",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "ON",
-                  "value": "ON"
-                },
-                {
-                  "name": "BC",
-                  "value": "BC"
-                },
-                {
-                  "name": "AB",
-                  "value": "AB"
-                },
-                {
-                  "name": "QC",
-                  "value": "QC"
-                },
-                {
-                  "name": "MB",
-                  "value": "MB"
-                },
-                {
-                  "name": "SK",
-                  "value": "SK"
-                },
-                {
-                  "name": "NS",
-                  "value": "NS"
-                },
-                {
-                  "name": "NB",
-                  "value": "NB"
-                },
-                {
-                  "name": "NL",
-                  "value": "NL"
-                },
-                {
-                  "name": "PE",
-                  "value": "PE"
-                },
-                {
-                  "name": "NT",
-                  "value": "NT"
-                },
-                {
-                  "name": "YT",
-                  "value": "YT"
-                },
-                {
-                  "name": "NU",
-                  "value": "NU"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "investableAssets",
-              "displayName": "investableAssets",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "under_25k",
-                  "value": "under_25k"
-                },
-                {
-                  "name": "25k_100k",
-                  "value": "25k_100k"
-                },
-                {
-                  "name": "100k_250k",
-                  "value": "100k_250k"
-                },
-                {
-                  "name": "250k_500k",
-                  "value": "250k_500k"
-                },
-                {
-                  "name": "500k_1m",
-                  "value": "500k_1m"
-                },
-                {
-                  "name": "1m_plus",
-                  "value": "1m_plus"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "annualIncome",
-              "displayName": "annualIncome",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "under_50k",
-                  "value": "under_50k"
-                },
-                {
-                  "name": "50k_100k",
-                  "value": "50k_100k"
-                },
-                {
-                  "name": "100k_200k",
-                  "value": "100k_200k"
-                },
-                {
-                  "name": "200k_500k",
-                  "value": "200k_500k"
-                },
-                {
-                  "name": "500k_plus",
-                  "value": "500k_plus"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "financialGoals",
-              "displayName": "financialGoals",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "investmentTimeline",
-              "displayName": "investmentTimeline",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "under_1yr",
-                  "value": "under_1yr"
-                },
-                {
-                  "name": "1_3yr",
-                  "value": "1_3yr"
-                },
-                {
-                  "name": "3_5yr",
-                  "value": "3_5yr"
-                },
-                {
-                  "name": "5_10yr",
-                  "value": "5_10yr"
-                },
-                {
-                  "name": "10_plus",
-                  "value": "10_plus"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "riskTolerance",
-              "displayName": "riskTolerance",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "conservative",
-                  "value": "conservative"
-                },
-                {
-                  "name": "moderate",
-                  "value": "moderate"
-                },
-                {
-                  "name": "aggressive",
-                  "value": "aggressive"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "currentAdvisorSituation",
-              "displayName": "currentAdvisorSituation",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "switching",
-                  "value": "switching"
-                },
-                {
-                  "name": "never_had",
-                  "value": "never_had"
-                },
-                {
-                  "name": "previously_had",
-                  "value": "previously_had"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "preferredDate",
-              "displayName": "preferredDate",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "preferredTime",
-              "displayName": "preferredTime",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "backupDate",
-              "displayName": "backupDate",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "backupTime",
-              "displayName": "backupTime",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "freeText",
-              "displayName": "freeText",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "status",
-              "displayName": "status",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "PENDING_ENRICHMENT",
-                  "value": "PENDING_ENRICHMENT"
-                },
-                {
-                  "name": "ENRICHING",
-                  "value": "ENRICHING"
-                },
-                {
-                  "name": "PENDING_REVIEW",
-                  "value": "PENDING_REVIEW"
-                },
-                {
-                  "name": "APPROVED",
-                  "value": "APPROVED"
-                },
-                {
-                  "name": "REJECTED",
-                  "value": "REJECTED"
-                },
-                {
-                  "name": "DISQUALIFIED",
-                  "value": "DISQUALIFIED"
-                },
-                {
-                  "name": "OUTREACH_IN_PROGRESS",
-                  "value": "OUTREACH_IN_PROGRESS"
-                },
-                {
-                  "name": "BOOKED",
-                  "value": "BOOKED"
-                },
-                {
-                  "name": "COMPLETED",
-                  "value": "COMPLETED"
-                },
-                {
-                  "name": "UNRESPONSIVE",
-                  "value": "UNRESPONSIVE"
-                },
-                {
-                  "name": "CANCELLED_BY_LEAD",
-                  "value": "CANCELLED_BY_LEAD"
-                },
-                {
-                  "name": "AWAITING_INFO",
-                  "value": "AWAITING_INFO"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "disqualificationReason",
-              "displayName": "disqualificationReason",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "priorityScore",
-              "displayName": "priorityScore",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "HIGH",
-                  "value": "HIGH"
-                },
-                {
-                  "name": "MEDIUM",
-                  "value": "MEDIUM"
-                },
-                {
-                  "name": "LOW",
-                  "value": "LOW"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "profileSummary",
-              "displayName": "profileSummary",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "recommendedServiceTier",
-              "displayName": "recommendedServiceTier",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "advisorMatchRanking",
-              "displayName": "advisorMatchRanking",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "riskFlags",
-              "displayName": "riskFlags",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "conversationStarters",
-              "displayName": "conversationStarters",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "suggestedBooking",
-              "displayName": "suggestedBooking",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "availabilityStatus",
-              "displayName": "availabilityStatus",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "PREFERRED_AVAILABLE",
-                  "value": "PREFERRED_AVAILABLE"
-                },
-                {
-                  "name": "BACKUP_AVAILABLE",
-                  "value": "BACKUP_AVAILABLE"
-                },
-                {
-                  "name": "SCHEDULING_REQUIRED",
-                  "value": "SCHEDULING_REQUIRED"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "assignedAdvisorId",
-              "displayName": "assignedAdvisorId",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "assignedAdvisorName",
-              "displayName": "assignedAdvisorName",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "bookedAt",
-              "displayName": "bookedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "appointmentDatetime",
-              "displayName": "appointmentDatetime",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "calendarEventId",
-              "displayName": "calendarEventId",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "submittedAt",
-              "displayName": "submittedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "approvedAt",
-              "displayName": "approvedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "rejectedAt",
-              "displayName": "rejectedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "rejectionReason",
-              "displayName": "rejectionReason",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "followUpCount",
-              "displayName": "followUpCount",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "number",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "lastEmailSentAt",
-              "displayName": "lastEmailSentAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "overrideReason",
-              "displayName": "overrideReason",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "priorityReasoning",
-              "displayName": "priorityReasoning",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            }
-          ],
+          "schema": [],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
@@ -1060,7 +398,7 @@
     },
     {
       "parameters": {
-        "content": "## DISQUALIFIED PATH\n\n1. Create record in Airtable Leads (status: DISQUALIFIED)\n2. Cache in Redis (30-day TTL)\n3. Send rejection email\n4. Respond 200 to form (don't reveal disqualification)",
+        "content": "## DISQUALIFIED PATH",
         "height": 180,
         "width": 360,
         "color": 7
@@ -1076,7 +414,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $('Disqualification Rules Engine').first().json;\nconst lead = data.leadData;\n\nreturn [{\n  json: {\n    key: `leadstate_${lead.leadId}`,\n    status: 'DISQUALIFIED',\n    leadId: lead.leadId,\n    fullName: lead.fullName,\n    email: lead.email,\n    phone: lead.phone || '',\n    province: lead.province,\n    investableAssets: lead.investableAssets,\n    annualIncome: lead.annualIncome,\n    financialGoals: lead.financialGoals,\n    investmentTimeline: lead.investmentTimeline,\n    riskTolerance: lead.riskTolerance,\n    currentAdvisorSituation: lead.currentAdvisorSituation,\n    preferredDate: lead.preferredDate || '',\n    preferredTime: lead.preferredTime || '',\n    backupDate: lead.backupDate || '',\n    backupTime: lead.backupTime || '',\n    freeText: lead.freeText || '',\n    submittedAt: lead.submittedAt,\n    disqualificationReasons: data.disqualificationReasons.join(','),\n    followUpCount: '0'\n  }\n}];"
+        "jsCode": "const data = $('Disqualification Rules Engine').first().json;\nconst lead = data.leadData;\nreturn [{ json: { key: `leadstate_${lead.leadId}`, status: 'DISQUALIFIED', leadId: lead.leadId, fullName: lead.fullName, email: lead.email, phone: lead.phone || '', province: lead.province, investableAssets: lead.investableAssets, annualIncome: lead.annualIncome, financialGoals: lead.financialGoals, investmentTimeline: lead.investmentTimeline, riskTolerance: lead.riskTolerance, currentAdvisorSituation: lead.currentAdvisorSituation, preferredDate: lead.preferredDate || '', preferredTime: lead.preferredTime || '', backupDate: lead.backupDate || '', backupTime: lead.backupTime || '', freeText: lead.freeText || '', submittedAt: lead.submittedAt, disqualificationReasons: data.disqualificationReasons.join(','), followUpCount: '0' } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1147,667 +485,7 @@
             "followUpCount": 0
           },
           "matchingColumns": [],
-          "schema": [
-            {
-              "id": "leadId",
-              "displayName": "leadId",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "fullName",
-              "displayName": "fullName",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "email",
-              "displayName": "email",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "phone",
-              "displayName": "phone",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "province",
-              "displayName": "province",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "ON",
-                  "value": "ON"
-                },
-                {
-                  "name": "BC",
-                  "value": "BC"
-                },
-                {
-                  "name": "AB",
-                  "value": "AB"
-                },
-                {
-                  "name": "QC",
-                  "value": "QC"
-                },
-                {
-                  "name": "MB",
-                  "value": "MB"
-                },
-                {
-                  "name": "SK",
-                  "value": "SK"
-                },
-                {
-                  "name": "NS",
-                  "value": "NS"
-                },
-                {
-                  "name": "NB",
-                  "value": "NB"
-                },
-                {
-                  "name": "NL",
-                  "value": "NL"
-                },
-                {
-                  "name": "PE",
-                  "value": "PE"
-                },
-                {
-                  "name": "NT",
-                  "value": "NT"
-                },
-                {
-                  "name": "YT",
-                  "value": "YT"
-                },
-                {
-                  "name": "NU",
-                  "value": "NU"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "investableAssets",
-              "displayName": "investableAssets",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "under_25k",
-                  "value": "under_25k"
-                },
-                {
-                  "name": "25k_100k",
-                  "value": "25k_100k"
-                },
-                {
-                  "name": "100k_250k",
-                  "value": "100k_250k"
-                },
-                {
-                  "name": "250k_500k",
-                  "value": "250k_500k"
-                },
-                {
-                  "name": "500k_1m",
-                  "value": "500k_1m"
-                },
-                {
-                  "name": "1m_plus",
-                  "value": "1m_plus"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "annualIncome",
-              "displayName": "annualIncome",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "under_50k",
-                  "value": "under_50k"
-                },
-                {
-                  "name": "50k_100k",
-                  "value": "50k_100k"
-                },
-                {
-                  "name": "100k_200k",
-                  "value": "100k_200k"
-                },
-                {
-                  "name": "200k_500k",
-                  "value": "200k_500k"
-                },
-                {
-                  "name": "500k_plus",
-                  "value": "500k_plus"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "financialGoals",
-              "displayName": "financialGoals",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "investmentTimeline",
-              "displayName": "investmentTimeline",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "under_1yr",
-                  "value": "under_1yr"
-                },
-                {
-                  "name": "1_3yr",
-                  "value": "1_3yr"
-                },
-                {
-                  "name": "3_5yr",
-                  "value": "3_5yr"
-                },
-                {
-                  "name": "5_10yr",
-                  "value": "5_10yr"
-                },
-                {
-                  "name": "10_plus",
-                  "value": "10_plus"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "riskTolerance",
-              "displayName": "riskTolerance",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "conservative",
-                  "value": "conservative"
-                },
-                {
-                  "name": "moderate",
-                  "value": "moderate"
-                },
-                {
-                  "name": "aggressive",
-                  "value": "aggressive"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "currentAdvisorSituation",
-              "displayName": "currentAdvisorSituation",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "switching",
-                  "value": "switching"
-                },
-                {
-                  "name": "never_had",
-                  "value": "never_had"
-                },
-                {
-                  "name": "previously_had",
-                  "value": "previously_had"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "preferredDate",
-              "displayName": "preferredDate",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "preferredTime",
-              "displayName": "preferredTime",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "backupDate",
-              "displayName": "backupDate",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "backupTime",
-              "displayName": "backupTime",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "freeText",
-              "displayName": "freeText",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "status",
-              "displayName": "status",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "PENDING_ENRICHMENT",
-                  "value": "PENDING_ENRICHMENT"
-                },
-                {
-                  "name": "ENRICHING",
-                  "value": "ENRICHING"
-                },
-                {
-                  "name": "PENDING_REVIEW",
-                  "value": "PENDING_REVIEW"
-                },
-                {
-                  "name": "APPROVED",
-                  "value": "APPROVED"
-                },
-                {
-                  "name": "REJECTED",
-                  "value": "REJECTED"
-                },
-                {
-                  "name": "DISQUALIFIED",
-                  "value": "DISQUALIFIED"
-                },
-                {
-                  "name": "OUTREACH_IN_PROGRESS",
-                  "value": "OUTREACH_IN_PROGRESS"
-                },
-                {
-                  "name": "BOOKED",
-                  "value": "BOOKED"
-                },
-                {
-                  "name": "COMPLETED",
-                  "value": "COMPLETED"
-                },
-                {
-                  "name": "UNRESPONSIVE",
-                  "value": "UNRESPONSIVE"
-                },
-                {
-                  "name": "CANCELLED_BY_LEAD",
-                  "value": "CANCELLED_BY_LEAD"
-                },
-                {
-                  "name": "AWAITING_INFO",
-                  "value": "AWAITING_INFO"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "disqualificationReason",
-              "displayName": "disqualificationReason",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "priorityScore",
-              "displayName": "priorityScore",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "HIGH",
-                  "value": "HIGH"
-                },
-                {
-                  "name": "MEDIUM",
-                  "value": "MEDIUM"
-                },
-                {
-                  "name": "LOW",
-                  "value": "LOW"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "profileSummary",
-              "displayName": "profileSummary",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "recommendedServiceTier",
-              "displayName": "recommendedServiceTier",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "advisorMatchRanking",
-              "displayName": "advisorMatchRanking",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "riskFlags",
-              "displayName": "riskFlags",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "conversationStarters",
-              "displayName": "conversationStarters",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "suggestedBooking",
-              "displayName": "suggestedBooking",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "availabilityStatus",
-              "displayName": "availabilityStatus",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "options",
-              "options": [
-                {
-                  "name": "PREFERRED_AVAILABLE",
-                  "value": "PREFERRED_AVAILABLE"
-                },
-                {
-                  "name": "BACKUP_AVAILABLE",
-                  "value": "BACKUP_AVAILABLE"
-                },
-                {
-                  "name": "SCHEDULING_REQUIRED",
-                  "value": "SCHEDULING_REQUIRED"
-                }
-              ],
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "assignedAdvisorId",
-              "displayName": "assignedAdvisorId",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "assignedAdvisorName",
-              "displayName": "assignedAdvisorName",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "bookedAt",
-              "displayName": "bookedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "appointmentDatetime",
-              "displayName": "appointmentDatetime",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "calendarEventId",
-              "displayName": "calendarEventId",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "submittedAt",
-              "displayName": "submittedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "approvedAt",
-              "displayName": "approvedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "rejectedAt",
-              "displayName": "rejectedAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "rejectionReason",
-              "displayName": "rejectionReason",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "followUpCount",
-              "displayName": "followUpCount",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "number",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "lastEmailSentAt",
-              "displayName": "lastEmailSentAt",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "overrideReason",
-              "displayName": "overrideReason",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            },
-            {
-              "id": "priorityReasoning",
-              "displayName": "priorityReasoning",
-              "required": false,
-              "defaultMatch": false,
-              "canBeUsedToMatch": true,
-              "display": true,
-              "type": "string",
-              "readOnly": false,
-              "removed": false
-            }
-          ],
+          "schema": [],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
@@ -1851,7 +529,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build rejection email from template\nconst lead = $('Prep Redis State (Disqualified)').first().json;\nlet templatesRaw = $('Get Email Templates').first().json;\nlet templates;\nif (typeof templatesRaw === 'string') templates = JSON.parse(templatesRaw);\nelse if (templatesRaw.data) templates = JSON.parse(templatesRaw.data);\nelse templates = templatesRaw;\n\nconst tpl = templates.disqualification || { subject: 'Thank you for your interest', body: 'Thank you for reaching out.' };\nconst firstName = lead.fullName.split(' ')[0];\n\nlet subject = tpl.subject.replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nlet body = tpl.body\n  .replace(/\\{\\{first_name\\}\\}/g, firstName)\n  .replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\n\nreturn [{ json: { to: lead.email, subject, body, leadId: lead.leadId } }];"
+        "jsCode": "const lead = $('Prep Redis State (Disqualified)').first().json;\nlet templatesRaw = $('Get Email Templates').first().json;\nlet templates;\nif (typeof templatesRaw === 'string') templates = JSON.parse(templatesRaw);\nelse if (templatesRaw.data) templates = JSON.parse(templatesRaw.data);\nelse templates = templatesRaw;\nconst tpl = templates.disqualification || { subject: 'Thank you for your interest', body: 'Thank you for reaching out.' };\nconst firstName = lead.fullName.split(' ')[0];\nlet subject = tpl.subject.replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nlet body = tpl.body.replace(/\\{\\{first_name\\}\\}/g, firstName).replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nreturn [{ json: { to: lead.email, subject, body, leadId: lead.leadId } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1916,7 +594,7 @@
     {
       "parameters": {
         "sendTo": "admin@northstarwealth.ca",
-        "subject": "⚠️ WF1 Intake Error — NorthStar Pipeline",
+        "subject": "WF1 Intake Error - NorthStar Pipeline",
         "message": "=Intake workflow error at {{ $now.toISO() }}\n\nError: {{ $json.error?.message || JSON.stringify($json) }}",
         "options": {}
       },
@@ -2123,22 +801,22 @@
         ]
       ]
     },
-    "Catch WF1 Errors": {
+    "Send Rejection Email": {
       "main": [
         [
           {
-            "node": "Send WF1 Error Alert",
+            "node": "Return 200 (Disqualified)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send Rejection Email": {
+    "Catch WF1 Errors": {
       "main": [
         [
           {
-            "node": "Return 200 (Disqualified)",
+            "node": "Send WF1 Error Alert",
             "type": "main",
             "index": 0
           }
@@ -2150,7 +828,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "94556721-c4ea-47d4-8037-1f306937cc21",
+  "versionId": "47ce49e7-76ed-44d9-ba0f-6e05d9e81970",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

@@ -56,7 +56,13 @@
         304
       ],
       "id": "a413ec51-d024-4ef6-b9f9-c268bf5c0c44",
-      "name": "Get Lead State"
+      "name": "Get Lead State",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
     },
     {
       "parameters": {
@@ -100,7 +106,13 @@
         496
       ],
       "id": "86348e62-1086-4bb5-8956-9bd456923282",
-      "name": "Gemini (Rejection)"
+      "name": "Gemini (Rejection)",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
     },
     {
       "parameters": {
@@ -109,8 +121,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1488,
-        288
+        1424,
+        304
       ],
       "id": "1cc56bb7-5fb4-4dd1-a393-284b5d6c2e1b",
       "name": "Build Email"
@@ -125,12 +137,18 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        1728,
-        288
+        1632,
+        304
       ],
       "id": "e1ddc60f-8949-4270-ad0e-bc4ca30307ec",
       "name": "Send Rejection Email",
-      "webhookId": "d3f2568b-5672-435f-bfee-4472c397f430"
+      "webhookId": "d3f2568b-5672-435f-bfee-4472c397f430",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
     },
     {
       "parameters": {
@@ -142,11 +160,17 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        1968,
-        288
+        1856,
+        304
       ],
       "id": "b3264ad2-aacf-4b3e-9170-306467ef3083",
-      "name": "Mark Rejection Sent"
+      "name": "Mark Rejection Sent",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
     },
     {
       "parameters": {},
@@ -187,7 +211,13 @@
       ],
       "id": "2a2ab304-9db2-49b4-bb24-0398b16c8b94",
       "name": "Send Fallback Email",
-      "webhookId": "ed30050a-22b6-499f-867f-2911b15068f7"
+      "webhookId": "ed30050a-22b6-499f-867f-2911b15068f7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -296,8 +326,9 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "ec80c9f4-8416-4227-9f89-1f1bcbd25fd5",
+  "versionId": "b167bca6-0d5d-4b49-80f7-c8d0e5bf828f",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
   },
   "id": "F4ZRJbdHVKvYnh5v",

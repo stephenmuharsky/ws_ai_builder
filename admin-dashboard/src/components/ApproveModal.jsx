@@ -7,10 +7,67 @@ export default function ApproveModal({ lead, onConfirm, onClose, loading }) {
   const advisorRanking = safeJsonParse(lead.advisorMatchRanking, [])
   const suggestedBooking = safeJsonParse(lead.suggestedBooking, null)
   const topAdvisor = advisorRanking[0] || {}
-  const isAvailable = lead.availabilityStatus === 'PREFERRED_AVAILABLE' || lead.availabilityStatus === 'BACKUP_AVAILABLE'
 
   const [selectedAdvisorId, setSelectedAdvisorId] = useState(topAdvisor.advisorId || '')
   const selectedAdvisor = advisors.find(a => a.advisorId === selectedAdvisorId) || {}
+  const selectedMatch = advisorRanking.find(r => r.advisorId === selectedAdvisorId)
+  const selectedAdvisorName = selectedAdvisor.advisorName || selectedMatch?.advisorName || topAdvisor.advisorName || 'Selected Advisor'
+
+  // Cross-check: does the selected advisor match the one availability was verified for?
+  const isVerifiedAdvisor = suggestedBooking && selectedAdvisorId === suggestedBooking.advisorId
+  const hasAvailability = lead.availabilityStatus === 'PREFERRED_AVAILABLE' || lead.availabilityStatus === 'BACKUP_AVAILABLE'
+  const canInstantBook = isVerifiedAdvisor && hasAvailability
+
+  function renderBookingStatus() {
+    if (!selectedAdvisorId) {
+      return (
+        <div className="flex items-start gap-3">
+          <div className="w-5 h-5 mt-0.5 flex-shrink-0 rounded-full border-2 border-navy-200 flex items-center justify-center">
+            <div className="w-1.5 h-1.5 rounded-full bg-navy-300" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-navy-500">Select an advisor</p>
+            <p className="text-sm text-navy-400 mt-0.5">Choose an advisor above to see booking availability.</p>
+          </div>
+        </div>
+      )
+    }
+
+    if (canInstantBook) {
+      return (
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-accent-green mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-navy-700">Consultation will be instantly booked</p>
+            <p className="text-sm text-navy-500 mt-0.5">
+              {formatDate(suggestedBooking.date)} at {formatTime(suggestedBooking.time)} with {selectedAdvisorName}
+            </p>
+          </div>
+        </div>
+      )
+    }
+
+    // Different advisor selected, or scheduling required for the verified advisor
+    const isUnverified = !isVerifiedAdvisor
+    return (
+      <div className="flex items-start gap-3">
+        <svg className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+        </svg>
+        <div>
+          <p className="text-sm font-semibold text-navy-700">Email outreach will begin</p>
+          <p className="text-sm text-navy-400 mt-0.5">
+            {isUnverified
+              ? `Availability hasn\u2019t been verified for ${selectedAdvisorName}. Automated email will be sent to find a suitable time.`
+              : `Preferred time is unavailable. Automated email will be sent to find a suitable time with ${selectedAdvisorName}.`
+            }
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -57,40 +114,22 @@ export default function ApproveModal({ lead, onConfirm, onClose, loading }) {
                   </option>
                 ))}
             </select>
-            {topAdvisor.reasoning && (
+            {selectedMatch?.reasoning && (
               <p className="mt-1.5 text-xs text-navy-400">
-                AI recommendation: {topAdvisor.reasoning}
+                AI recommendation: {selectedMatch.reasoning}
               </p>
             )}
           </div>
 
-          {/* Booking Status */}
-          <div className="p-4 rounded-lg border mb-5">
-            {isAvailable && suggestedBooking ? (
-              <div className="flex items-start gap-3">
-                <svg className="w-5 h-5 text-accent-green mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <p className="text-sm font-semibold text-navy-700">Consultation will be booked</p>
-                  <p className="text-sm text-navy-500 mt-0.5">
-                    {formatDate(suggestedBooking.date)} at {formatTime(suggestedBooking.time)} with {selectedAdvisor.advisorName || topAdvisor.advisorName}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-3">
-                <svg className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                </svg>
-                <div>
-                  <p className="text-sm font-semibold text-navy-700">Email outreach will begin</p>
-                  <p className="text-sm text-navy-400 mt-0.5">
-                    Preferred time is unavailable. Automated email will be sent to find a suitable time with {selectedAdvisor.advisorName || topAdvisor.advisorName}.
-                  </p>
-                </div>
-              </div>
-            )}
+          {/* Booking Status — dynamic based on selected advisor */}
+          <div className={`p-4 rounded-lg border mb-5 transition-colors duration-200 ${
+            canInstantBook
+              ? 'bg-emerald-50/40 border-emerald-200/60'
+              : selectedAdvisorId
+                ? 'bg-amber-50/40 border-amber-200/60'
+                : 'bg-navy-50/30 border-navy-100'
+          }`}>
+            {renderBookingStatus()}
           </div>
 
           {/* Actions */}
@@ -103,9 +142,9 @@ export default function ApproveModal({ lead, onConfirm, onClose, loading }) {
               Cancel
             </button>
             <button
-              onClick={() => onConfirm(lead.leadId, selectedAdvisorId, selectedAdvisor.advisorName || '')}
-              disabled={loading}
-              className="btn-approve"
+              onClick={() => onConfirm(lead.leadId, selectedAdvisorId, selectedAdvisorName)}
+              disabled={loading || !selectedAdvisorId}
+              className="btn-approve disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>

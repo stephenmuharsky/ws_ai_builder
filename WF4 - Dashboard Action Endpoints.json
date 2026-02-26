@@ -93,7 +93,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const approval = $('Process Approval').first().json;\nconst record = $('Find Lead (Approve)').first().json;\nif (!record || !record.id) throw new Error('Lead not found: ' + approval.leadId);\nreturn [{ json: {\n  id: record.id,\n  status: 'APPROVED',\n  assignedAdvisorId: approval.assignedAdvisorId,\n  assignedAdvisorName: approval.assignedAdvisorName,\n  approvedAt: approval.approvedAt\n}}];"
+        "jsCode": "const approval = $('Process Approval').first().json;\nconst record = $('Find Lead (Approve)').first().json;\nif (!record || !record.id) throw new Error('Lead not found: ' + approval.leadId);\n\n// Resolve advisor name from ID if not provided by frontend\nlet advisorName = approval.assignedAdvisorName || '';\nlet advisorId = approval.assignedAdvisorId || '';\n\n// If we have an ID but no name, try to get it from the lead's enrichment data\nif (advisorId && !advisorName) {\n  try {\n    const ranking = JSON.parse(record.advisorMatchRanking || '[]');\n    const match = ranking.find(a => a.advisorId === advisorId);\n    if (match) advisorName = match.advisorName;\n  } catch(e) {}\n}\n\n// Fallback: hardcoded advisor map (from Advisor Info table)\nif (advisorId && !advisorName) {\n  const advisorMap = {\n    'ADV001': 'Michael Torres',\n    'ADV002': 'Priya Sharma', \n    'ADV003': 'David Kim',\n    'ADV004': 'Rachel Nguyen'\n  };\n  advisorName = advisorMap[advisorId] || '';\n}\n\nreturn [{ json: {\n  id: record.id,\n  status: 'APPROVED',\n  assignedAdvisorId: advisorId,\n  assignedAdvisorName: advisorName,\n  approvedAt: approval.approvedAt\n}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -947,7 +947,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "790fb06e-10e4-47c8-b190-173eeae80f1a",
+  "versionId": "6a6c9dd9-3b38-4e16-a7e1-b188f4a8a9bf",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

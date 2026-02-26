@@ -71,4 +71,21 @@
   .modal-content {
     @apply bg-white rounded-xl shadow-2xl w-full max-w-md border border-navy-100;
   }
+
+  /* WF10: Consultation Prep Brief */
+  .prep-brief-container {
+    @apply bg-white rounded-xl border border-navy-100 shadow-sm
+           overflow-hidden;
+  }
+
+  /* WF11: Nurture Email Card */
+  .nurture-email-container {
+    @apply bg-white rounded-xl border border-navy-100 shadow-sm
+           overflow-hidden;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }

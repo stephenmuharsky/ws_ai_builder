@@ -53,6 +53,29 @@ export async function requestInfo(leadId, followUpQuestion) {
   })
 }
 
+// ── WF11: Nurture email actions ─────────────────────────────────────
+
+export async function sendNurtureEmail(leadId, to, subject, body) {
+  return n8nRequest('/webhook/api/nurture/send', {
+    method: 'POST',
+    body: JSON.stringify({ leadId, to, subject, body }),
+  })
+}
+
+export async function approveNurtureEmail(leadId) {
+  return n8nRequest('/webhook/api/nurture/approve', {
+    method: 'POST',
+    body: JSON.stringify({ leadId }),
+  })
+}
+
+export async function dismissNurtureEmail(leadId) {
+  return n8nRequest('/webhook/api/nurture/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ leadId }),
+  })
+}
+
 // ── n8n helper ──────────────────────────────────────────────────────
 
 async function n8nRequest(path, options = {}) {

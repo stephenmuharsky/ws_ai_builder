@@ -48,6 +48,9 @@ function normalizeRecord(record) {
     'submittedAt', 'approvedAt', 'rejectedAt', 'rejectionReason',
     'followUpCount', 'lastEmailSentAt', 'overrideReason',
     'priorityReasoning',
+    // WF10/WF11 fields
+    'consultationPrepBrief',
+    'nurtureEmailDraft', 'nurtureEmailSubject', 'nurtureEmailStatus',
   ]
 
   for (const key of directFields) {

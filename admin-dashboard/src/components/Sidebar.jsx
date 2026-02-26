@@ -4,7 +4,7 @@ export default function Sidebar({ pendingCount = 0, rejectedCount = 0 }) {
   const links = [
     {
       to: '/pending',
-      label: 'Pending Review',
+      label: 'New Leads',
       count: pendingCount,
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -24,7 +24,7 @@ export default function Sidebar({ pendingCount = 0, rejectedCount = 0 }) {
     },
     {
       to: '/active',
-      label: 'Active & Completed',
+      label: 'In Progress',
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -35,18 +35,23 @@ export default function Sidebar({ pendingCount = 0, rejectedCount = 0 }) {
 
   return (
     <aside className="w-64 bg-surface-light border-r border-navy-100 flex flex-col flex-shrink-0">
-      {/* Logo */}
-      <div className="px-5 py-5 border-b border-navy-100">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-navy-700 rounded-lg flex items-center justify-center flex-shrink-0">
-            <svg viewBox="0 0 24 24" className="w-5 h-5 text-accent-green" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-sm font-bold text-navy-700 leading-tight">NorthStar</p>
-            <p className="text-[10px] text-navy-400 tracking-wider uppercase">Pipeline Admin</p>
-          </div>
+      {/* Branding */}
+      <div className="px-5 h-[60px] flex items-center gap-3 border-b border-navy-100 flex-shrink-0">
+        <svg viewBox="0 0 32 32" className="w-8 h-8 flex-shrink-0">
+          <defs>
+            <linearGradient id="sidebar-star-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#1e293b"/>
+              <stop offset="100%" stopColor="#0f172a"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="7" fill="url(#sidebar-star-bg)"/>
+          <path d="M16 5l2.94 6.56L26 12.64l-5 5.36L22.18 25 16 21.26 9.82 25 11 18l-5-5.36 7.06-1.08z" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round"/>
+          <path d="M16 5l2.94 6.56L26 12.64l-5 5.36L22.18 25 16 21.26 9.82 25 11 18l-5-5.36 7.06-1.08z" fill="#fff" opacity="0.15"/>
+          <circle cx="16" cy="14.5" r="1.5" fill="#fff"/>
+        </svg>
+        <div className="min-w-0">
+          <p className="font-display text-[13px] font-semibold text-navy-700 leading-tight truncate">NorthStar Wealth Advisory</p>
+          <p className="text-[9px] text-navy-400 tracking-[0.12em] uppercase mt-0.5">Lead Management Dashboard</p>
         </div>
       </div>
 

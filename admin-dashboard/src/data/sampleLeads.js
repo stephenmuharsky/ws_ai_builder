@@ -288,6 +288,70 @@ export const sampleLeads = [
     assignedAdvisorName: 'James Wilson',
     priorityScore: 'HIGH',
     appointmentDatetime: '2026-02-25T14:00:00-05:00',
+    profileSummary: 'Robert is a high-net-worth professional in Quebec with $500K-$1M in investable assets switching from his current advisor. Dual focus on retirement planning and estate planning over a 10+ year horizon with moderate risk tolerance. The advisor switch signals openness to a new relationship and likely dissatisfaction with current service level.',
+    consultationPrepBrief: JSON.stringify({
+      executiveSummary: 'Robert Tremblay is a high-value Quebec-based client ($500K-$1M) actively switching advisors, signaling dissatisfaction with his current relationship. His dual focus on retirement and estate planning, combined with a 10+ year horizon and moderate risk tolerance, positions him perfectly for NorthStar\'s Comprehensive Wealth Management tier. The upcoming consultation should focus on understanding his specific pain points with his current advisor and demonstrating NorthStar\'s differentiated estate planning capabilities.',
+      financialSnapshot: {
+        assetContext: 'Investable assets of $500K-$1M place Robert in the upper segment of our client base. Combined with annual income of $200K-$500K, he has strong wealth accumulation potential over his 10+ year horizon.',
+        incomeAssetDynamic: 'High income-to-asset ratio suggests either recent high earnings growth, significant spending, or assets tied up in non-liquid forms (real estate, business interests). Worth exploring during consultation.',
+        wealthTrajectory: 'With disciplined planning, Robert could realistically target $1.5M-$2.5M in investable assets within 10 years, depending on savings rate and market conditions.'
+      },
+      goalAnalysis: [
+        {
+          goal: 'Retirement Planning',
+          keyQuestions: [
+            'What is your target retirement age and desired lifestyle?',
+            'Do you have a pension or group RRSP through your employer?',
+            'What is your current RRSP/TFSA utilization?',
+            'Have you considered the Quebec Pension Plan (QPP) optimization strategies?'
+          ],
+          quickMath: 'Assuming $700K current assets, $50K annual contributions, and 6% returns: ~$2.1M at age 65 (assuming current age ~50). Sufficient for $85K/year withdrawal at 4% rule.',
+          canadianContext: 'Quebec residents face unique tax considerations including higher provincial tax rates and QPP vs CPP differences. Estate planning must account for Quebec civil law (forced heirship rules).'
+        },
+        {
+          goal: 'Estate Planning',
+          keyQuestions: [
+            'Do you have a current will drafted under Quebec civil law?',
+            'Are there specific beneficiaries or charitable giving intentions?',
+            'Do you own property or business interests that complicate succession?',
+            'Have you considered a testamentary trust for tax efficiency?'
+          ],
+          quickMath: 'At projected $2M+ estate value, probate and tax implications could exceed $200K without proper planning. Testamentary trust structures could save $30K-$50K in annual tax.',
+          canadianContext: 'Quebec uses notarial wills (no probate required if notarized), which is a significant advantage. However, Quebec\'s forced heirship rules for married couples and the matrimonial regime must be carefully navigated.'
+        }
+      ],
+      clientPsychologyNotes: {
+        riskProfile: 'Moderate risk tolerance with a long time horizon suggests a balanced growth approach. However, the act of switching advisors may indicate a desire for more conservative or more transparent management than he\'s currently receiving.',
+        advisorRelationship: 'Currently switching advisors — likely frustrated with lack of attention, poor communication, or underperformance. Expect high sensitivity to responsiveness and personalization. First impressions critical.',
+        decisionMakingStyle: 'The fact that Robert proactively sought out a new advisor (rather than staying passive) suggests a decisive, action-oriented personality. Likely appreciates direct communication and clear action plans over vague promises.'
+      },
+      meetingAgenda: [
+        { timeBlock: '0-5 min', activity: 'Welcome & Rapport Building', advisorNotes: 'Acknowledge the courage it takes to switch advisors. Ask about what prompted the change — listen carefully for pain points to address.' },
+        { timeBlock: '5-15 min', activity: 'Current Situation Deep Dive', advisorNotes: 'Map current assets, accounts, and any existing estate documents. Understand what\'s working and what isn\'t with current advisor.' },
+        { timeBlock: '15-30 min', activity: 'Retirement Planning Discussion', advisorNotes: 'Walk through retirement timeline, target lifestyle, QPP/CPP optimization. Show quick projections using our modeling tools.' },
+        { timeBlock: '30-40 min', activity: 'Estate Planning Overview', advisorNotes: 'Discuss Quebec-specific considerations (notarial wills, matrimonial regime). Introduce testamentary trust concepts if appropriate.' },
+        { timeBlock: '40-50 min', activity: 'NorthStar Value Proposition', advisorNotes: 'Highlight our fee transparency, communication cadence, and team-based approach. Address any concerns from previous advisor experience.' },
+        { timeBlock: '50-60 min', activity: 'Next Steps & Follow-Up', advisorNotes: 'Outline the onboarding process, required documents, and timeline. Schedule follow-up within 1 week.' }
+      ],
+      documentsToRequest: [
+        'Most recent investment account statements (all accounts)',
+        'Current will and any powers of attorney',
+        'Marriage contract or matrimonial agreement (if applicable)',
+        'Latest Notice of Assessment from Revenue Quebec and CRA',
+        'Group RRSP/pension statements from employer',
+        'Life insurance policy details'
+      ],
+      redFlagsAndLandmines: [
+        'Quebec civil law differences — avoid assuming common law estate rules apply',
+        'Switching advisor sensitivity — do not criticize the previous advisor directly, let Robert share his experience',
+        'High income may trigger AMT (Alternative Minimum Tax) considerations',
+        'If assets include locked-in retirement accounts (LIRA), transfer restrictions apply'
+      ],
+      competitiveIntelligence: 'Robert is switching from an unnamed advisor, likely at a major bank or insurance company given Quebec market dynamics. Key differentiators to emphasize: fee transparency (vs. embedded mutual fund fees), holistic planning (vs. product-pushing), and Quebec-specific expertise (many national firms lack deep Quebec tax/legal knowledge).'
+    }),
+    nurtureEmailDraft: 'Hi Robert,\n\nThank you for booking your consultation with NorthStar Wealth Advisory. We\'re looking forward to meeting with you on Tuesday, February 25th at 2:00 PM.\n\nI wanted to reach out personally because I know that switching advisors is a significant decision — and I want you to feel confident that you\'re in good hands from day one.\n\nTo make our first conversation as productive as possible, here are a few things you might want to have handy:\n\n• Your most recent investment statements (from all accounts)\n• Any existing estate planning documents (will, powers of attorney)\n• A rough sense of your retirement timeline and lifestyle goals\n\nOf course, there\'s no pressure to have everything ready — we\'ll work through it together at whatever pace feels right.\n\nIf you have any questions before our meeting, don\'t hesitate to reach out. I\'m here to help.\n\nWarm regards,\nJames Wilson\nSenior Wealth Advisor, NorthStar Wealth Advisory',
+    nurtureEmailSubject: 'Looking forward to our conversation, Robert',
+    nurtureEmailStatus: 'PENDING_REVIEW',
   },
   {
     leadId: 'LEAD-20260219-4455',

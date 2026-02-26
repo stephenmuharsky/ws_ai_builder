@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# WF11: PRE-MEETING NURTURE EMAIL DRAFTS\n\n**Purpose:** AI reads the WF10 consultation prep brief and drafts a personalized rapport-building email to the prospective client BEFORE their first meeting. The advisor reviews the draft on the dashboard and chooses Send or Dismiss.\n\n**Triggers:**\n1. Called by WF10 after prep brief is generated (leadId input)\n2. Webhook: POST /webhook/api/nurture/approve — dashboard sends approval\n3. Webhook: POST /webhook/api/nurture/dismiss — dashboard sends dismissal\n\n**Flow:**\n- WF10 completes → calls WF11 with leadId\n- AI reads prep brief + lead data → generates warm, personalized email draft\n- Draft saved to Airtable: nurtureEmailDraft, nurtureEmailSubject, nurtureEmailStatus=PENDING_REVIEW\n- Dashboard shows draft with Send / Dismiss buttons\n- Send → returns mailto: link so advisor's native email client opens with pre-filled draft\n- Dismiss → marks DISMISSED in Airtable\n\n**The human always sends the email themselves.** AI drafts, human edits and sends.",
+        "content": "# WF11: PRE-MEETING NURTURE EMAIL DRAFTS (with Compliance Guardrails)\n\n**Purpose:** AI drafts a personalized rapport-building email, then a SEPARATE Compliance Guardrails Agent reviews it against firm policies (via RAG/Pinecone) before saving.\n\n**Flow:**\n1. WF10 completes → calls WF11 with leadId\n2. AI Nurture Agent drafts warm, personalized email\n3. ⭐ Compliance Guardrails Agent reviews draft against embedded policy docs (Pinecone)\n4. If violations found: auto-revises text, flags compliance notes\n5. Draft saved to Airtable with compliance metadata\n6. Dashboard shows draft with Send / Dismiss buttons\n7. Send → returns mailto: link (advisor sends from their own email)\n\n**Two-agent pattern:** Generation agent + Review agent. Same Pinecone index, different purposes.\n**The human always sends the email themselves.** AI drafts, AI reviews, human decides.",
         "height": 520,
         "width": 620,
         "color": 4
@@ -186,7 +186,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.1,
       "position": [
-        1408,
+        1888,
         400
       ],
       "credentials": {
@@ -213,9 +213,11 @@
           "mappingMode": "defineBelow",
           "value": {
             "id": "={{ $json.id }}",
-            "nurtureEmailDraft": "={{ $('Process Draft Output').first().json.body }}",
-            "nurtureEmailSubject": "={{ $('Process Draft Output').first().json.subject }}",
-            "nurtureEmailStatus": "PENDING_REVIEW"
+            "nurtureEmailDraft": "={{ $('Process Guardrails Result').first().json.body }}",
+            "nurtureEmailSubject": "={{ $('Process Guardrails Result').first().json.subject }}",
+            "nurtureEmailStatus": "={{ $('Process Guardrails Result').first().json.nurtureEmailStatus }}",
+            "complianceNotes": "={{ $('Process Guardrails Result').first().json.complianceNotes }}",
+            "complianceViolations": "={{ $('Process Guardrails Result').first().json.complianceViolations }}"
           },
           "matchingColumns": [
             "id"
@@ -241,7 +243,7 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.1,
       "position": [
-        1648,
+        2128,
         400
       ],
       "credentials": {
@@ -263,8 +265,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        208,
-        976
+        -480,
+        1024
       ],
       "webhookId": "2b7c79e8-b2df-45f1-99a4-f44000d141fe"
     },
@@ -289,8 +291,8 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.1,
       "position": [
-        480,
-        976
+        -208,
+        1024
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -308,8 +310,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        720,
-        976
+        32,
+        1024
       ]
     },
     {
@@ -355,8 +357,8 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.1,
       "position": [
-        960,
-        976
+        272,
+        1024
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -378,8 +380,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1200,
-        976
+        512,
+        1024
       ]
     },
     {
@@ -394,8 +396,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        208,
-        1216
+        -480,
+        1264
       ],
       "webhookId": "66d10094-ba5e-49da-b0ac-1e7a5bf48b81"
     },
@@ -420,8 +422,8 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.1,
       "position": [
-        480,
-        1216
+        -208,
+        1264
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -473,8 +475,8 @@
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2.1,
       "position": [
-        720,
-        1216
+        32,
+        1264
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -496,8 +498,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        960,
-        1216
+        272,
+        1264
       ]
     },
     {
@@ -507,8 +509,8 @@
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
       "position": [
-        928,
-        1424
+        240,
+        1472
       ]
     },
     {
@@ -520,9 +522,152 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1168,
-        1424
+        480,
+        1472
       ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Review the following client-facing email draft for compliance with NorthStar Wealth Advisory policies.\n\n## EMAIL TO REVIEW\nSubject: {{ $json.subject }}\n\nBody:\n{{ $json.body }}\n\n## CONTEXT\nThis email is from advisor {{ $json.advisorName }} to prospective client {{ $json.clientName }}.\nThe client has NOT yet been accepted — this is a pre-meeting rapport email.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a compliance review agent for NorthStar Wealth Advisory. Your job is to check outbound client-facing emails against firm policies BEFORE they are sent.\n\n## CRITICAL: USE THE COMPLIANCE POLICY TOOL\nYou MUST query the 'Compliance Policy Docs' tool to retrieve relevant compliance rules before making your assessment. Query for:\n1. Client communication standards and prohibited language\n2. Pre-engagement compliance requirements (what can/cannot be said before a client is formally onboarded)\n3. Financial advice boundaries and disclaimer requirements\n\n## CHECK FOR THESE VIOLATIONS\n1. **Specific financial advice** — Any concrete investment recommendations, specific product suggestions, or return projections before formal engagement\n2. **Guarantees or promises** — Language implying guaranteed outcomes, specific returns, or assured results\n3. **Misleading claims** — Overstating advisor qualifications, firm capabilities, or past performance\n4. **Privacy violations** — Mentioning specific asset amounts, income figures, or sensitive personal details the client shared in confidence\n5. **Regulatory issues** — Missing required disclaimers, unauthorized use of credentials/titles, or claims that violate MFDA/CSA advertising rules\n6. **Inappropriate tone** — Overly aggressive sales language, pressure tactics, fear-based urgency, or anything that could be perceived as coercive\n7. **Competitor disparagement** — Negative statements about other advisors or firms\n8. **Unauthorized commitments** — Promising specific meeting outcomes, fee structures, or services not yet discussed with the client\n\n## OUTPUT (JSON only)\n{\n  \"approved\": true/false,\n  \"overallAssessment\": \"PASS | MINOR_ISSUES | MAJOR_VIOLATIONS\",\n  \"violations\": [\n    {\n      \"type\": \"category from above\",\n      \"excerpt\": \"the problematic text from the email\",\n      \"explanation\": \"why this violates policy\",\n      \"severity\": \"LOW | MEDIUM | HIGH\",\n      \"suggestedFix\": \"how to fix it\"\n    }\n  ],\n  \"revisedSubject\": \"corrected subject if needed, otherwise original\",\n  \"revisedBody\": \"full corrected email body if any violations found, otherwise original body unchanged\",\n  \"complianceNotes\": \"1-2 sentence summary for the advisor explaining what was checked and any changes made\"\n}\n\n## RULES\n- approved=true ONLY if overallAssessment is PASS\n- If MINOR_ISSUES: approved=false, provide revisedBody with fixes applied\n- If MAJOR_VIOLATIONS: approved=false, provide revisedBody with fixes, flag for human review\n- Empty violations array = PASS\n- Be thorough but not overly restrictive — warm, personal emails are the GOAL, just without compliance issues\n- Do NOT strip personality or warmth from the email unless it crosses a compliance line\n- Output ONLY valid JSON"
+        }
+      },
+      "id": "wf11-guardrails-agent",
+      "name": "Compliance Guardrails Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1408,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "wf11-guardrails-gemini",
+      "name": "Gemini 2.5 Flash (Guardrails)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        640
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{ \"type\": \"object\", \"properties\": { \"approved\": { \"type\": \"boolean\" }, \"overallAssessment\": { \"type\": \"string\", \"enum\": [\"PASS\", \"MINOR_ISSUES\", \"MAJOR_VIOLATIONS\"] }, \"violations\": { \"type\": \"array\", \"items\": { \"type\": \"object\", \"properties\": { \"type\": { \"type\": \"string\" }, \"excerpt\": { \"type\": \"string\" }, \"explanation\": { \"type\": \"string\" }, \"severity\": { \"type\": \"string\", \"enum\": [\"LOW\", \"MEDIUM\", \"HIGH\"] }, \"suggestedFix\": { \"type\": \"string\" } }, \"required\": [\"type\", \"excerpt\", \"explanation\", \"severity\", \"suggestedFix\"] } }, \"revisedSubject\": { \"type\": \"string\" }, \"revisedBody\": { \"type\": \"string\" }, \"complianceNotes\": { \"type\": \"string\" } }, \"required\": [\"approved\", \"overallAssessment\", \"violations\", \"revisedSubject\", \"revisedBody\", \"complianceNotes\"] }"
+      },
+      "id": "wf11-guardrails-schema",
+      "name": "Guardrails Output Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2112,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "description": "NorthStar Wealth Advisory compliance and communication policy documents. Contains: client communication standards, pre-engagement rules, prohibited language and claims, MFDA/CSA advertising compliance requirements, disclaimer requirements, privacy and confidentiality rules, financial advice boundaries for pre-engagement communications, and vulnerable client communication guidelines. Query this tool to check email drafts against firm policies.",
+        "topK": 6
+      },
+      "id": "wf11-compliance-tool",
+      "name": "Compliance Policy Docs",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "pineconeIndex": {
+          "__rl": true,
+          "mode": "list",
+          "value": "northstar-policies",
+          "cachedResultName": "northstar-policies"
+        },
+        "options": {}
+      },
+      "id": "wf11-compliance-pinecone",
+      "name": "Pinecone (Compliance Check)",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        880
+      ],
+      "credentials": {
+        "pineconeApi": {
+          "id": "yIemhxUEm2rJwniw",
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "id": "wf11-compliance-embeddings",
+      "name": "Embeddings Gemini (Compliance)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1312,
+        1056
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const guardrailsRaw = $('Compliance Guardrails Agent').first().json;\nconst original = $('Process Draft Output').first().json;\n\n// Parse guardrails output\nconst result = guardrailsRaw.output\n  ? (typeof guardrailsRaw.output === 'string' ? JSON.parse(guardrailsRaw.output) : guardrailsRaw.output)\n  : guardrailsRaw;\n\nconst approved = result.approved === true;\nconst assessment = result.overallAssessment || 'PASS';\n\n// Use revised text if there were issues, otherwise keep original\nconst finalSubject = (!approved && result.revisedSubject) ? result.revisedSubject : original.subject;\nconst finalBody = (!approved && result.revisedBody) ? result.revisedBody : original.body;\n\nreturn [{ json: {\n  // Pass through all original fields\n  leadId: original.leadId,\n  airtableRecordId: original.airtableRecordId,\n  clientName: original.clientName,\n  clientEmail: original.clientEmail,\n  advisorName: original.advisorName,\n  internalNotes: original.internalNotes,\n  // Final email content (revised if needed)\n  subject: finalSubject,\n  body: finalBody,\n  // Compliance metadata\n  complianceApproved: approved,\n  complianceAssessment: assessment,\n  complianceNotes: result.complianceNotes || '',\n  complianceViolations: JSON.stringify(result.violations || []),\n  // Status depends on result\n  nurtureEmailStatus: approved ? 'PENDING_REVIEW' : (assessment === 'MAJOR_VIOLATIONS' ? 'COMPLIANCE_FLAGGED' : 'PENDING_REVIEW')\n} }];"
+      },
+      "id": "wf11-process-guardrails",
+      "name": "Process Guardrails Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        880
+      ],
+      "id": "5732ff82-6915-4955-b896-259c306c3ce3",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gKOxHvioCsyTdrwX",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -588,17 +733,6 @@
           {
             "node": "Nurture Email Agent",
             "type": "ai_outputParser",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Process Draft Output": {
-      "main": [
-        [
-          {
-            "node": "Find Lead for Update",
-            "type": "main",
             "index": 0
           }
         ]
@@ -702,14 +836,114 @@
           }
         ]
       ]
+    },
+    "Process Draft Output": {
+      "main": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 2.5 Flash (Guardrails)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails Output Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Policy Docs": {
+      "ai_tool": [
+        [
+          {
+            "node": "Compliance Guardrails Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone (Compliance Check)": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Compliance Policy Docs",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Gemini (Compliance)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone (Compliance Check)",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Guardrails Agent": {
+      "main": [
+        [
+          {
+            "node": "Process Guardrails Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Guardrails Result": {
+      "main": [
+        [
+          {
+            "node": "Find Lead for Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compliance Policy Docs",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "0662553e-6328-4eff-a4b2-98557befc9ae",
+  "versionId": "a510987a-1bf1-47d3-9185-b0af07e61b3c",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
   },
   "id": "pD0jBk6n4k3HXT3W",

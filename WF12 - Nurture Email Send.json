@@ -1,0 +1,374 @@
+{
+  "name": "WF12 - Nurture Email Send",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# WF12: NURTURE EMAIL SEND\n\n**Trigger:** POST /api/nurture/send from admin dashboard\n\n**Payload:** { leadId, to, subject, body }\n\n**Flow:**\n1. Receive webhook with email content\n2. Send email via Gmail\n3. Update lead in Airtable (nurtureEmailStatus → SENT)\n4. Return success/failure to frontend\n\n**Error handling:** Returns 500 with error message on failure",
+        "height": 280,
+        "width": 480,
+        "color": 4
+      },
+      "id": "sn-wf12",
+      "name": "WF12 Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/nurture/send",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "wf12-webhook",
+      "name": "POST /api/nurture/send",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -48,
+        208
+      ],
+      "webhookId": "nurture-send",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "wf12-validate",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: 'Missing required fields: to, subject, body, leadId' }) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "GET, POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "wf12-invalid",
+      "name": "Return 400 (Invalid)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        480,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('POST /api/nurture/send').first().json.body;\n\n// Wrap plain text body in HTML that preserves line breaks\nconst htmlBody = `<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;\">\n<div style=\"background: #0a2540; padding: 24px 32px; border-radius: 12px 12px 0 0;\">\n<h1 style=\"color: #ffffff; font-size: 20px; font-weight: 600; margin: 0;\">NorthStar Wealth Advisory</h1>\n</div>\n<div style=\"background: #ffffff; padding: 28px 32px; border: 1px solid #e8e8e8; border-top: none;\">\n<pre style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; white-space: pre-wrap; word-wrap: break-word; font-size: 15px; line-height: 1.6; margin: 0; color: #1a1a2e;\">${input.body}</pre>\n</div>\n<div style=\"padding: 16px 32px; text-align: center; font-size: 12px; color: #9ca3af;\">NorthStar Wealth Advisory · Toronto, ON</div>\n</div>`;\n\nreturn [{ json: {\n  leadId: input.leadId,\n  to: input.to,\n  subject: input.subject,\n  body: input.body,\n  htmlBody\n} }];"
+      },
+      "id": "wf12-prep",
+      "name": "Prep Email Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "wf12-send",
+      "name": "Send Nurture Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        160
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $('Prep Email Data').first().json.leadId }}'",
+        "options": {}
+      },
+      "id": "wf12-find-lead",
+      "name": "Find Lead in Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        160
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "nurtureEmailStatus": "SENT",
+            "lastEmailSentAt": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf12-update-lead",
+      "name": "Update Nurture Status",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        160
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Nurture email sent successfully', leadId: $('Prep Email Data').first().json.leadId }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "GET, POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "wf12-respond-ok",
+      "name": "Return 200 (Success)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1440,
+        160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "wf12-error",
+      "name": "Catch Errors",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: 'Failed to send nurture email' }) }}",
+        "options": {
+          "responseCode": 500,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "GET, POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "wf12-respond-error",
+      "name": "Return 500 (Error)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        960,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "POST /api/nurture/send": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Prep Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return 400 (Invalid)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Nurture Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Find Lead in Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead in Airtable": {
+      "main": [
+        [
+          {
+            "node": "Update Nurture Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Nurture Status": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catch Errors": {
+      "main": [
+        [
+          {
+            "node": "Return 500 (Error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "52b9673f-8555-4dcd-a851-2ff9d7f3a3a2",
+  "meta": {
+    "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
+  },
+  "id": "iiYdGJBMrOxozTl4",
+  "tags": []
+}

@@ -69,13 +69,15 @@ export default function LeadCard({ lead, onApprove, onReject, onRequestInfo, onO
               </div>
 
               <div className="flex items-center gap-4 mt-2 text-xs text-navy-400">
-                {topAdvisor.advisorName && (
+                {/* Only show assigned advisor on non-pending cards (after approval) */}
+                {variant !== 'pending' && topAdvisor.advisorName && (
                   <span className="flex items-center gap-1">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
                     {topAdvisor.advisorName}
                   </span>
                 )}
-                {!isDisqualified && (
+                {/* Only show availability on non-pending, non-rejected cards */}
+                {variant !== 'pending' && !isDisqualified && (
                   <span className={`flex items-center gap-1 ${isAvailable ? 'text-accent-green' : 'text-amber-500'}`}>
                     {isAvailable ? (
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>

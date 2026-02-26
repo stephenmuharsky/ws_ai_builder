@@ -87,10 +87,13 @@ export function formatDate(dateStr) {
   return d.toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
+function titleCase(str) {
+  return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 export function parseGoals(goals) {
-  if (Array.isArray(goals)) return goals
-  if (typeof goals === 'string') return goals.split(',').map(s => s.trim()).filter(Boolean)
-  return []
+  const raw = Array.isArray(goals) ? goals : typeof goals === 'string' ? goals.split(',').map(s => s.trim()).filter(Boolean) : []
+  return raw.map(titleCase)
 }
 
 export function safeJsonParse(str, fallback) {

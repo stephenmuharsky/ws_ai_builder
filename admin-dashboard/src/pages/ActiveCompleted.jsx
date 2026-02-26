@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useLeads } from '../hooks/useLeads'
-import { formatAssets, formatDate, formatTime, timeAgo, parseGoals } from '../utils/formatters'
+import { formatAssets, formatDate, formatTime, timeAgo } from '../utils/formatters'
+import ConsultationPrepBrief from '../components/ConsultationPrepBrief'
+import NurtureEmailCard from '../components/NurtureEmailCard'
 
 const FILTERS = [
   { value: 'all', label: 'All' },
@@ -14,8 +16,18 @@ const FILTERS = [
 export default function ActiveCompleted() {
   const { leads, loading, usingFallback, refresh } = useLeads('active')
   const [filter, setFilter] = useState('all')
+  const [expandedLeadId, setExpandedLeadId] = useState(null)
 
   const filtered = filter === 'all' ? leads : leads.filter(l => l.status === filter)
+
+  function toggleExpand(lead) {
+    if (!isExpandable(lead)) return
+    setExpandedLeadId(prev => prev === lead.leadId ? null : lead.leadId)
+  }
+
+  function isExpandable(lead) {
+    return lead.status === 'BOOKED' && (lead.consultationPrepBrief || lead.nurtureEmailDraft)
+  }
 
   if (loading) {
     return (
@@ -32,7 +44,7 @@ export default function ActiveCompleted() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="font-display text-2xl font-semibold text-navy-700">Active & Completed</h2>
+          <h2 className="font-display text-2xl font-semibold text-navy-700">In Progress</h2>
           <p className="text-sm text-navy-400 mt-0.5">
             {filtered.length} lead{filtered.length !== 1 ? 's' : ''}
             {usingFallback && (
@@ -89,40 +101,114 @@ export default function ActiveCompleted() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((lead) => (
-                <tr key={lead.leadId} className="border-b border-navy-100/50 last:border-0 hover:bg-surface-light/50 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <p className="font-semibold text-navy-700">{lead.fullName}</p>
-                    <p className="text-xs text-navy-400">{lead.email}</p>
-                  </td>
-                  <td className="px-5 py-3.5 hidden lg:table-cell text-navy-600">
-                    {formatAssets(lead.investableAssets)}
-                  </td>
-                  <td className="px-5 py-3.5 text-navy-600">
-                    {lead.assignedAdvisorName || '--'}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <StatusBadge status={lead.status} />
-                  </td>
-                  <td className="px-5 py-3.5 hidden md:table-cell text-navy-400 text-xs">
-                    {timeAgo(lead.lastEmailSentAt || lead.approvedAt || lead.submittedAt)}
-                  </td>
-                  <td className="px-5 py-3.5 hidden lg:table-cell text-navy-600 text-xs">
-                    {lead.appointmentDatetime ? (
-                      <>
-                        {formatDate(lead.appointmentDatetime.split('T')[0])}
-                        {' at '}
-                        {formatTime(lead.appointmentDatetime.split('T')[1]?.slice(0, 5))}
-                      </>
-                    ) : '--'}
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((lead) => {
+                const canExpand = isExpandable(lead)
+                const isExpanded = expandedLeadId === lead.leadId
+
+                return (
+                  <LeadRow
+                    key={lead.leadId}
+                    lead={lead}
+                    canExpand={canExpand}
+                    isExpanded={isExpanded}
+                    onToggle={() => toggleExpand(lead)}
+                  />
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  )
+}
+
+function LeadRow({ lead, canExpand, isExpanded, onToggle }) {
+  return (
+    <>
+      <tr
+        className={`border-b border-navy-100/50 last:border-0 transition-colors ${
+          canExpand ? 'cursor-pointer hover:bg-surface-light/80' : 'hover:bg-surface-light/50'
+        } ${isExpanded ? 'bg-surface-light/60' : ''}`}
+        onClick={onToggle}
+      >
+        <td className="px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <div>
+              <p className="font-semibold text-navy-700">{lead.fullName}</p>
+              <p className="text-xs text-navy-400">{lead.email}</p>
+            </div>
+            {canExpand && (
+              <div className="flex items-center gap-1 ml-1">
+                {lead.consultationPrepBrief && (
+                  <span className="w-2 h-2 rounded-full bg-navy-600" title="Prep brief available" />
+                )}
+                {lead.nurtureEmailStatus === 'PENDING_REVIEW' && (
+                  <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" title="Nurture email pending" />
+                )}
+              </div>
+            )}
+          </div>
+        </td>
+        <td className="px-5 py-3.5 hidden lg:table-cell text-navy-600">
+          {formatAssets(lead.investableAssets)}
+        </td>
+        <td className="px-5 py-3.5 text-navy-600">
+          {lead.assignedAdvisorName || '--'}
+        </td>
+        <td className="px-5 py-3.5">
+          <StatusBadge status={lead.status} />
+        </td>
+        <td className="px-5 py-3.5 hidden md:table-cell text-navy-400 text-xs">
+          {timeAgo(lead.lastEmailSentAt || lead.approvedAt || lead.submittedAt)}
+        </td>
+        <td className="px-5 py-3.5 hidden lg:table-cell text-navy-600 text-xs">
+          <div className="flex items-center gap-2">
+            {lead.appointmentDatetime ? (
+              <>
+                {formatDate(lead.appointmentDatetime.split('T')[0])}
+                {' at '}
+                {formatTime(lead.appointmentDatetime.split('T')[1]?.slice(0, 5))}
+              </>
+            ) : '--'}
+            {canExpand && (
+              <svg className={`w-4 h-4 text-navy-300 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            )}
+          </div>
+        </td>
+      </tr>
+
+      {/* Expanded Detail Panel */}
+      {isExpanded && (
+        <tr>
+          <td colSpan="6" className="p-0">
+            <div className="px-6 py-5 bg-gradient-to-b from-surface-light/80 to-white border-b border-navy-100 animate-[fadeIn_0.2s_ease-out]">
+              {/* Lead Profile Summary */}
+              {lead.profileSummary && (
+                <div className="mb-5 p-4 bg-navy-50/60 border border-navy-100 rounded-lg">
+                  <p className="text-[10px] font-bold text-navy-400 uppercase tracking-widest mb-2">AI Profile Summary</p>
+                  <p className="text-sm text-navy-700 leading-relaxed">{lead.profileSummary}</p>
+                </div>
+              )}
+
+              <div className="space-y-5">
+                {/* Consultation Prep Brief */}
+                {lead.consultationPrepBrief && (
+                  <ConsultationPrepBrief brief={lead.consultationPrepBrief} />
+                )}
+
+                {/* Nurture Email Card */}
+                {lead.nurtureEmailDraft && (
+                  <NurtureEmailCard lead={lead} />
+                )}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
