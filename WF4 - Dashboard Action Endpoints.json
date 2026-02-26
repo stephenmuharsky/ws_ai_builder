@@ -3,9 +3,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# WF4: DASHBOARD ACTION ENDPOINTS\n\n4 POST endpoints. Dashboard reads Airtable directly.\nNo Redis for lead state — Airtable is source of truth.\n\n1. POST /api/leads/approve → APPROVED\n2. POST /api/leads/reject → REJECTED\n3. POST /api/leads/override → PENDING_ENRICHMENT\n4. POST /api/leads/request-info → AWAITING_INFO",
-        "height": 300,
-        "width": 480,
+        "content": "# WF4: DASHBOARD ACTION ENDPOINTS\n\n**6 endpoints. Dashboard reads Airtable directly for lead lists.**\n\n**ACTIONS:**\n1. POST /api/leads/approve → APPROVED → triggers WF5\n2. POST /api/leads/reject → REJECTED → triggers WF8\n3. POST /api/leads/override → PENDING_ENRICHMENT → triggers WF2\n4. POST /api/leads/request-info → AWAITING_INFO\n5. POST /api/leads/confirm-reject → REJECTED (skip 48h grace) → triggers WF8\n\n**DATA:**\n6. GET /api/leads/disqualified → All DISQUALIFIED leads with full form data, DQ reasons, grace period countdown\n\n**Override flow:** Admin overrides DQ lead → status=PENDING_ENRICHMENT → WF2 enriches → status=PENDING_REVIEW → appears in New Leads with full AI data",
+        "height": 480,
+        "width": 540,
         "color": 4
       },
       "type": "n8n-nodes-base.stickyNote",
@@ -713,6 +713,404 @@
         1312,
         192
       ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "F4ZRJbdHVKvYnh5v",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/F4ZRJbdHVKvYnh5v",
+          "cachedResultName": "WF8 - Rejection Email Generation"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Parse Reject').first().json.leadId }}",
+            "rejectionReason": "={{ $('Parse Reject').first().json.rejectionReason || 'not_a_fit' }}",
+            "customNote": "={{ $('Parse Reject').first().json.customNote || 'Rejected by admin via dashboard' }}"
+          },
+          "matchingColumns": [
+            "leadId"
+          ],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "rejectionReason",
+              "displayName": "rejectionReason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "customNote",
+              "displayName": "customNote",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "trigger-wf8",
+      "name": "Trigger WF8 - Rejection Email",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1312,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HfZqG2gp6J25webY",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Parse Override').first().json.leadId }}"
+          },
+          "matchingColumns": [
+            "leadId"
+          ],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "trigger-wf2-override",
+      "name": "Trigger WF2 - Enrich Override",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1312,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "path": "api/leads/disqualified",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "get-dq-webhook",
+      "name": "GET /api/leads/disqualified",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        1504
+      ],
+      "webhookId": "636b33b6-c85a-4f1d-be6d-7b66995f7874"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "{status}='DISQUALIFIED'",
+        "options": {}
+      },
+      "id": "fetch-dq-leads",
+      "name": "Fetch DQ Leads",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        352,
+        1504
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.all().map(i => i.json);\nconst now = new Date();\n\nconst formatted = leads.map(lead => {\n  const submitted = new Date(lead.submittedAt);\n  const hoursElapsed = (now - submitted) / (1000 * 60 * 60);\n  const graceHoursRemaining = Math.max(0, 48 - hoursElapsed);\n  const gracePeriodExpired = hoursElapsed >= 48;\n\n  // Parse disqualification reasons into human-readable labels\n  const reasonMap = {\n    'jurisdiction_not_served': 'Jurisdiction not served',\n    'below_asset_threshold': 'Below asset threshold',\n    'goal_mismatch': 'Service goals not offered'\n  };\n  const rawReasons = (lead.disqualificationReason || '').split(',').filter(Boolean);\n  const readableReasons = rawReasons.map(r => reasonMap[r.trim()] || r.trim());\n\n  // Asset range display\n  const assetDisplay = {\n    'under_25k': 'Under $25K',\n    '25k_100k': '$25K - $100K',\n    '100k_250k': '$100K - $250K',\n    '250k_500k': '$250K - $500K',\n    '500k_1m': '$500K - $1M',\n    '1m_plus': '$1M+'\n  };\n\n  const incomeDisplay = {\n    'under_50k': 'Under $50K',\n    '50k_100k': '$50K - $100K',\n    '100k_200k': '$100K - $200K',\n    '200k_plus': '$200K+'\n  };\n\n  return {\n    id: lead.id,\n    leadId: lead.leadId,\n    fullName: lead.fullName,\n    email: lead.email,\n    phone: lead.phone || '',\n    province: lead.province,\n    investableAssets: lead.investableAssets,\n    investableAssetsDisplay: assetDisplay[lead.investableAssets] || lead.investableAssets,\n    annualIncome: lead.annualIncome,\n    annualIncomeDisplay: incomeDisplay[lead.annualIncome] || lead.annualIncome,\n    financialGoals: lead.financialGoals,\n    investmentTimeline: lead.investmentTimeline,\n    riskTolerance: lead.riskTolerance,\n    currentAdvisorSituation: lead.currentAdvisorSituation,\n    preferredDate: lead.preferredDate,\n    preferredTime: lead.preferredTime,\n    backupDate: lead.backupDate || '',\n    backupTime: lead.backupTime || '',\n    freeText: lead.freeText || '',\n    submittedAt: lead.submittedAt,\n    disqualificationReasons: rawReasons,\n    disqualificationReasonsDisplay: readableReasons,\n    graceHoursRemaining: Math.round(graceHoursRemaining * 10) / 10,\n    gracePeriodExpired,\n    rejectionEmailSentAt: lead.rejectionEmailSentAt || null,\n    status: lead.status\n  };\n});\n\n// Sort: grace period active first (most urgent), then by submission time\nformatted.sort((a, b) => {\n  if (a.gracePeriodExpired !== b.gracePeriodExpired) return a.gracePeriodExpired ? 1 : -1;\n  return a.graceHoursRemaining - b.graceHoursRemaining;\n});\n\nreturn [{ json: { leads: formatted, count: formatted.length } }];"
+      },
+      "id": "format-dq-response",
+      "name": "Format DQ Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-dq",
+      "name": "Return DQ Leads",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        832,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/leads/confirm-reject",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "confirm-reject-webhook",
+      "name": "POST /api/leads/confirm-reject",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        1808
+      ],
+      "webhookId": "d8fa08ff-bff4-4dbb-bc5c-11795a630f4c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{ json: {\n  leadId: body.leadId,\n  rejectionReason: body.rejectionReason || 'not_a_fit',\n  customNote: body.customNote || 'Admin confirmed rejection from auto-rejected view',\n  confirmedAt: new Date().toISOString()\n}}];"
+      },
+      "id": "parse-confirm-reject",
+      "name": "Parse Confirm Reject",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        1808
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $json.leadId }}'",
+        "options": {}
+      },
+      "id": "find-confirm-reject",
+      "name": "Find Lead (Confirm Reject)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        1808
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Find Lead (Confirm Reject)').first().json.id }}",
+            "status": "REJECTED",
+            "rejectionReason": "={{ $('Parse Confirm Reject').first().json.rejectionReason }}",
+            "rejectedAt": "={{ $('Parse Confirm Reject').first().json.confirmedAt }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-confirm-reject",
+      "name": "Update Lead (Confirm Reject)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        832,
+        1808
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "F4ZRJbdHVKvYnh5v",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $('Parse Confirm Reject').first().json.leadId }}",
+            "rejectionReason": "={{ $('Parse Confirm Reject').first().json.rejectionReason }}",
+            "customNote": "={{ $('Parse Confirm Reject').first().json.customNote }}"
+          },
+          "matchingColumns": [
+            "leadId"
+          ],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "type": "string"
+            },
+            {
+              "id": "rejectionReason",
+              "displayName": "rejectionReason",
+              "type": "string"
+            },
+            {
+              "id": "customNote",
+              "displayName": "customNote",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "trigger-wf8-confirm",
+      "name": "Trigger WF8 - Confirmed Rejection",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1072,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Parse Confirm Reject').first().json.leadId, status: 'REJECTED', message: 'Rejection confirmed, email will be sent.' }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-confirm-reject",
+      "name": "Return 200 (Confirm Reject)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1072,
+        1744
+      ]
     }
   ],
   "pinData": {},
@@ -828,6 +1226,11 @@
             "node": "Return 200 (Reject)",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Trigger WF8 - Rejection Email",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -881,6 +1284,11 @@
         [
           {
             "node": "Return 200 (Override)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger WF2 - Enrich Override",
             "type": "main",
             "index": 0
           }
@@ -941,13 +1349,95 @@
           }
         ]
       ]
+    },
+    "GET /api/leads/disqualified": {
+      "main": [
+        [
+          {
+            "node": "Fetch DQ Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch DQ Leads": {
+      "main": [
+        [
+          {
+            "node": "Format DQ Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format DQ Response": {
+      "main": [
+        [
+          {
+            "node": "Return DQ Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/leads/confirm-reject": {
+      "main": [
+        [
+          {
+            "node": "Parse Confirm Reject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Confirm Reject": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (Confirm Reject)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (Confirm Reject)": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (Confirm Reject)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (Confirm Reject)": {
+      "main": [
+        [
+          {
+            "node": "Return 200 (Confirm Reject)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger WF8 - Confirmed Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "6a6c9dd9-3b38-4e16-a7e1-b188f4a8a9bf",
+  "versionId": "40e6ff4f-ffe4-4c91-9210-9d722bc0a998",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

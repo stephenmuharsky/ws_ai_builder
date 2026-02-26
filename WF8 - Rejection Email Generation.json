@@ -66,7 +66,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $('Called from WF4').first().json;\nconst lead = $('Get Lead State').first().json;\n\nreturn [{ json: {\n  leadId: input.leadId,\n  email: lead.email,\n  fullName: lead.fullName,\n  firstName: (lead.fullName || '').split(' ')[0],\n  rejectionReason: input.rejectionReason,\n  customNote: input.customNote || '',\n  financialGoals: lead.financialGoals || '',\n  investableAssets: lead.investableAssets || ''\n} }];"
+        "jsCode": "const input = $('Called from WF4').first().json;\nconst lead = $('Get Lead State').first().json;\n\nconst firstName = (lead.fullName || '').split(' ')[0];\n\nreturn [{ json: {\n  chatInput: `Rejection reason: ${input.rejectionReason}\\nCustom note from admin: ${input.customNote || ''}\\nClient name: ${firstName}\\nFinancial goals: ${lead.financialGoals || ''}\\nAsset range: ${lead.investableAssets || ''}`,\n  leadId: input.leadId,\n  email: lead.email,\n  fullName: lead.fullName,\n  firstName,\n  rejectionReason: input.rejectionReason,\n  customNote: input.customNote || '',\n  financialGoals: lead.financialGoals || '',\n  investableAssets: lead.investableAssets || ''\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -322,11 +322,11 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "b167bca6-0d5d-4b49-80f7-c8d0e5bf828f",
+  "versionId": "a76429aa-7052-4e19-a6eb-cf206aebf757",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

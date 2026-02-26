@@ -81,10 +81,10 @@
       "parameters": {
         "conditions": {
           "options": {
-            "caseSensitive": true,
+            "version": 2,
             "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
+            "caseSensitive": true,
+            "typeValidation": "strict"
           },
           "conditions": [
             {
@@ -114,10 +114,10 @@
       "parameters": {
         "conditions": {
           "options": {
-            "caseSensitive": true,
+            "version": 2,
             "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
+            "caseSensitive": true,
+            "typeValidation": "strict"
           },
           "conditions": [
             {
@@ -313,7 +313,7 @@
       ],
       "id": "2d6d7649-8800-470b-8d30-ac60b9477075",
       "name": "Send Booking Confirmation",
-      "webhookId": "74caab94-8466-4e30-816e-f7950a64cbb7",
+      "webhookId": "93c3aa75-62cd-4161-92c9-afc26ba8bcfb",
       "credentials": {
         "gmailOAuth2": {
           "id": "dnECY8GMehNvK0Ok",
@@ -459,7 +459,7 @@
       ],
       "id": "5696f8a9-288a-479d-9448-c7e7794ada31",
       "name": "Send Cancel Ack",
-      "webhookId": "f04436e6-fbe7-4824-98af-5275f678534f",
+      "webhookId": "fdebad6e-3536-43c0-b2d0-13c8d8c61896",
       "credentials": {
         "gmailOAuth2": {
           "id": "dnECY8GMehNvK0Ok",
@@ -519,7 +519,7 @@
       ],
       "id": "96b16e33-f2c1-47bc-be1e-1263431e8dbe",
       "name": "Send Clarification",
-      "webhookId": "1b8eac38-5012-4351-abcc-6c944dbb9dff",
+      "webhookId": "7a75f3ac-61ba-4b26-ae3f-1bb545291fb2",
       "credentials": {
         "gmailOAuth2": {
           "id": "dnECY8GMehNvK0Ok",
@@ -548,6 +548,21 @@
           "name": "Redis account"
         }
       }
+    },
+    {
+      "parameters": {
+        "workflowId": "JlBlolawHoZv1ylN",
+        "mode": "each",
+        "options": {}
+      },
+      "id": "wf6-trigger-wf10",
+      "name": "Trigger WF10 - Prep Brief",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        3136,
+        288
+      ]
     }
   ],
   "pinData": {},
@@ -759,13 +774,24 @@
           }
         ]
       ]
+    },
+    "Update Lead (BOOKED Reply)": {
+      "main": [
+        [
+          {
+            "node": "Trigger WF10 - Prep Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "4d38e38c-a766-46c2-b4c0-c77016a213e0",
+  "versionId": "04f98567-9b03-4a44-b229-2741e8b37b2e",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

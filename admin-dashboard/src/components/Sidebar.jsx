@@ -4,7 +4,7 @@ export default function Sidebar({ pendingCount = 0, rejectedCount = 0 }) {
   const links = [
     {
       to: '/pending',
-      label: 'New Leads',
+      label: 'Pending Review',
       count: pendingCount,
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -14,7 +14,7 @@ export default function Sidebar({ pendingCount = 0, rejectedCount = 0 }) {
     },
     {
       to: '/rejected',
-      label: 'Auto-Rejected',
+      label: 'Flagged',
       count: rejectedCount,
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -24,7 +24,7 @@ export default function Sidebar({ pendingCount = 0, rejectedCount = 0 }) {
     },
     {
       to: '/active',
-      label: 'In Progress',
+      label: 'Active Pipeline',
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

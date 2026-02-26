@@ -1,7 +1,5 @@
 # NorthStar Wealth Advisory — AI-Powered Lead Pipeline
 
-> **Branch:** All code lives on `master`. Clone or browse that branch.
-
 An end-to-end AI-powered lead qualification, enrichment, and advisor matching pipeline for a financial advisory firm. The core human decision is accept or reject the client — a regulatory and relationship judgment call that must stay with the advisor. But the system goes well beyond simple routing: AI enhances human decision-making at every stage through RAG-powered lead enrichment, intelligent advisor matching, automated scheduling conflict resolution, AI-generated consultation prep briefs, and guardrail-checked pre-meeting touchpoint emails that the advisor can review and edit before sending.
 
 ---
@@ -9,7 +7,17 @@ An end-to-end AI-powered lead qualification, enrichment, and advisor matching pi
 ## What The System Does
 
 ### Automated Intake & Qualification
-A prospective client fills out a multi-step intake form. The system immediately validates the submission and applies deterministic disqualification rules — jurisdiction, minimum asset threshold, and goal fit. No AI involved here: rule-based filtering eliminates false negatives from hallucination. Disqualified leads are still visible to the admin with an override option, because rules can miss context (e.g., a lead below the asset threshold who mentions a pending inheritance).
+A prospective client fills out a multi-step intake form. The system immediately validates the submission and applies deterministic disqualification rules — jurisdiction, minimum asset threshold, and goal fit. No AI involved here: rule-based filtering eliminates false negatives from hallucination. Disqualified leads get a 48-hour grace period before any rejection email is sent, giving the advisor time to override edge cases the rules can't catch.
+
+### Flagged Leads — Human Override for Rule-Based Rejections
+Disqualified leads aren't silently discarded. They appear in a dedicated **Flagged** tab in the admin dashboard, where the advisor sees a rich detail card for each one:
+
+- **DQ reason badges** with contextual explanations — which rule triggered, what the firm policy is, and the specific values that failed (e.g., "Province: SK — firm serves ON, BC, AB, QC only")
+- **Grace period countdown** showing time remaining before the automated rejection email fires
+- **Full applicant details** including scheduling preferences, free-text notes, and financial profile
+- **Three actions**: Override to Pending (sends lead through enrichment), Confirm Rejection (immediately triggers WF8, skipping the 48h wait), or Request Info (asks a follow-up question)
+
+This matters because rules are blunt instruments. A client who selected "Saskatchewan" but wrote "relocating to Ontario next month" in their free text would be auto-disqualified by jurisdiction rules — but any human reading the full context would override that. The Flagged view ensures the advisor always gets that chance before a rejection email goes out.
 
 ### RAG-Powered Lead Enrichment
 Leads that pass disqualification enter the AI enrichment pipeline (Gemini 2.5 Flash). This is where the system's intelligence lives:
@@ -83,13 +91,13 @@ CLIENT INTAKE FORM (React)          ADMIN DASHBOARD (React)
 
 | # | Workflow | What It Does |
 |---|---------|-------------|
-| WF1 | Intake & Auto-Disqualification | Validates submission, applies disqualification rules, writes to Airtable |
+| WF1 | Intake & Auto-Disqualification | Validates submission, applies disqualification rules, writes to Airtable (no rejection email — 48h grace period) |
 | WF2 | AI Enrichment Pipeline | Gemini generates: profile summary, priority score, risk flags, advisor ranking, conversation starters, service tier |
 | WF3 | Availability Pre-Check | Checks if top-ranked advisor has the client's preferred/backup time slots open |
-| WF4 | Dashboard Action Endpoints | 4 webhooks handling approve/reject/override/request-info from admin dashboard |
+| WF4 | Dashboard Action Endpoints | 6 webhooks handling approve/reject/override/request-info/list-disqualified/confirm-reject from admin dashboard |
 | WF5 | Email Outreach & Booking | Sends confirmation or outreach email, creates appointment, triggers WF10+WF11 |
 | WF6 | Inbound Email Processing | AI parses client email replies — books, cancels, answers questions, or escalates |
-| WF7 | Follow-Up Cadence | Automated reminders at 48h and 96h; marks unresponsive at 7 days |
+| WF7 | Follow-Up Cadence | Automated reminders at 48h and 96h; marks unresponsive at 7 days; sends disqualification rejection emails after 48h grace period expires |
 | WF8 | Rejection Email Generation | AI-personalized rejection email based on specific reason |
 | WF9 | Business Data Cache Refresh | Syncs Airtable config, advisors, services, and templates to Redis cache |
 | WF10 | Consultation Prep Brief Generator | AI generates comprehensive meeting prep (executive summary, agenda, goal analysis, psychology notes, red flags) |
@@ -105,13 +113,18 @@ CLIENT INTAKE FORM (React)          ADMIN DASHBOARD (React)
 Form Submitted
       |
       v
-  Disqualification Rules -----> DISQUALIFIED (admin can override)
+  Disqualification Rules -----> DISQUALIFIED (48h grace period)
+      |                               |
+      |                               +---> Admin overrides --> PENDING_ENRICHMENT
+      |                               +---> Admin confirms reject --> REJECTED (WF8 immediately)
+      |                               +---> Admin requests info --> AWAITING_INFO
+      |                               +---> Grace expires (WF7) --> REJECTED (WF8 auto-sends)
       |
       v (passed)
   AI Enrichment (Gemini + RAG)
       |
       v
-  PENDING_REVIEW  <-- admin sees this in "New Leads" tab
+  PENDING_REVIEW  <-- admin sees this in "Pending Review" tab
       |
       +---> APPROVED ---> Availability Check
       |                      |
@@ -151,12 +164,14 @@ Form Submitted
 │   ├── src/
 │   │   ├── pages/
 │   │   │   ├── PendingReview.jsx        # New leads awaiting decision
-│   │   │   ├── AutoRejected.jsx         # Disqualified leads (overridable)
-│   │   │   └── ActiveCompleted.jsx      # Approved / booked / completed leads
+│   │   │   ├── Flagged.jsx              # Disqualified leads with override/confirm/request-info
+│   │   │   └── ActivePipeline.jsx       # Approved / booked / completed leads
 │   │   ├── components/
 │   │   │   ├── LeadCard.jsx             # Expandable card with all AI enrichment data
+│   │   │   ├── DisqualifiedCard.jsx     # Rich detail card for flagged leads (DQ reasons, grace countdown)
 │   │   │   ├── ApproveModal.jsx         # Advisor selection + dynamic availability check
 │   │   │   ├── RejectModal.jsx          # Rejection reason + notes
+│   │   │   ├── ConfirmRejectModal.jsx   # Confirm rejection (skip grace period, trigger WF8)
 │   │   │   ├── RequestInfoModal.jsx     # Follow-up question to client
 │   │   │   ├── ConsultationPrepBrief.jsx# Rich collapsible prep brief (8 sections)
 │   │   │   └── NurtureEmailCard.jsx     # Editable email draft + send/dismiss
@@ -238,6 +253,8 @@ npm run dev                 # http://localhost:5174
 2. Configure credentials: Airtable PAT, Redis, Gmail, Gemini API key
 3. Activate workflows in order: WF9 first (cache refresh), then WF1-WF8, then WF10-WF13
 
+**MASTER_WS_AI_BUILDER_WF.json** — A consolidated visual reference containing all 13 workflows in a single canvas. Not meant to be executed — import it to see the full system architecture at a glance.
+
 ---
 
 ## Key Design Decisions
@@ -245,6 +262,8 @@ npm run dev                 # http://localhost:5174
 **Reads from Airtable, writes through n8n.** The dashboard reads leads/advisors directly from Airtable's REST API for speed. All mutations go through n8n webhooks so downstream workflows trigger automatically.
 
 **Deterministic rules + AI enrichment.** Disqualification is rule-based — no false negatives from hallucination. Enrichment uses AI where nuance matters.
+
+**Grace period with human override.** Rule-based disqualification is immediate but rejection emails are delayed 48 hours. The Flagged tab gives the advisor full context — including free-text notes that might contradict the rule — and three action paths: override, confirm rejection, or request more information. This is where the system's human-in-the-loop design matters most: automated rules handle the common case, but edge cases get human judgment before any client-facing action.
 
 **RAG-grounded generation.** The consultation prep brief and nurture email are generated with firm-specific context retrieved from the compliance policy manual (vectorized in WF13). This prevents generic financial advice and ensures outputs reflect actual firm policies.
 

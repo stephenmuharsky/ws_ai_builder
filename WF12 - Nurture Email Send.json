@@ -38,11 +38,64 @@
       "onError": "continueRegularOutput"
     },
     {
-      "parameters": {},
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.body.to }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "cond-2",
+              "leftValue": "={{ $json.body.subject }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "cond-3",
+              "leftValue": "={{ $json.body.body }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "cond-4",
+              "leftValue": "={{ $json.body.leadId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
       "id": "wf12-validate",
       "name": "Validate Payload",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
+      "typeVersion": 2.2,
       "position": [
         240,
         208
@@ -95,15 +148,23 @@
       ]
     },
     {
-      "parameters": {},
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
       "id": "wf12-send",
       "name": "Send Nurture Email",
       "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.2,
+      "typeVersion": 2.1,
       "position": [
         720,
         160
       ],
+      "webhookId": "ef9ede3c-dbc5-4c1f-acbc-cbed7f1a6809",
       "credentials": {
         "gmailOAuth2": {
           "id": "dnECY8GMehNvK0Ok",
@@ -365,7 +426,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "52b9673f-8555-4dcd-a851-2ff9d7f3a3a2",
+  "versionId": "6f4d477a-bd3f-4fe6-9f04-4d5fe93e85d0",
   "meta": {
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
   },

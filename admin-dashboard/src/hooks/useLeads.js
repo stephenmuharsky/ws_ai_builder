@@ -54,5 +54,9 @@ export function useLeads(tab = 'pending') {
     setLeads(prev => prev.filter(l => l.leadId !== leadId))
   }, [])
 
-  return { leads, loading, error, usingFallback, refresh: load, removeLead }
+  const updateLead = useCallback((leadId, updates) => {
+    setLeads(prev => prev.map(l => l.leadId === leadId ? { ...l, ...updates } : l))
+  }, [])
+
+  return { leads, loading, error, usingFallback, refresh: load, removeLead, updateLead }
 }

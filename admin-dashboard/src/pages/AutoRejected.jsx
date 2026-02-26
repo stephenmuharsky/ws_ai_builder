@@ -1,19 +1,57 @@
 import { useState } from 'react'
 import { useLeads } from '../hooks/useLeads'
-import LeadCard from '../components/LeadCard'
-import { overrideLead } from '../utils/api'
+import DisqualifiedCard from '../components/DisqualifiedCard'
+import ConfirmRejectModal from '../components/ConfirmRejectModal'
+import RequestInfoModal from '../components/RequestInfoModal'
+import { overrideLead, confirmRejectLead, requestInfo } from '../utils/api'
 
 export default function AutoRejected() {
-  const { leads, loading, usingFallback, refresh, removeLead } = useLeads('auto_rejected')
+  const { leads, loading, refresh, removeLead, updateLead } = useLeads('auto_rejected')
+  const [modal, setModal] = useState({ type: null, lead: null })
   const [actionLoading, setActionLoading] = useState(false)
+  const [toast, setToast] = useState(null)
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 4000)
+  }
 
   const handleOverride = async (lead) => {
     setActionLoading(true)
     try {
-      await overrideLead(lead.leadId, 'Admin override - moved to pending review')
+      await overrideLead(lead.leadId, 'Admin override — sent to AI enrichment')
       removeLead(lead.leadId)
-    } catch {
-      removeLead(lead.leadId)
+      showToast('Lead sent to AI enrichment — will appear in New Leads shortly')
+    } catch (err) {
+      showToast(err.message || 'Override failed', 'error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleConfirmReject = async (leadId, reason, note) => {
+    setActionLoading(true)
+    try {
+      await confirmRejectLead(leadId, reason, note)
+      updateLead(leadId, { rejectionEmailSentAt: new Date().toISOString() })
+      setModal({ type: null, lead: null })
+      showToast('Rejection confirmed — email will be sent')
+    } catch (err) {
+      showToast(err.message || 'Failed to confirm rejection', 'error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleRequestInfo = async (leadId, question) => {
+    setActionLoading(true)
+    try {
+      await requestInfo(leadId, question)
+      removeLead(leadId)
+      setModal({ type: null, lead: null })
+      showToast('Question sent — lead moved to Awaiting Info')
+    } catch (err) {
+      showToast(err.message || 'Failed to send question', 'error')
     } finally {
       setActionLoading(false)
     }
@@ -32,12 +70,25 @@ export default function AutoRejected() {
 
   return (
     <div>
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-sm font-medium
+          animate-[fadeIn_0.2s_ease-out] transition-opacity
+          ${toast.type === 'error'
+            ? 'bg-red-600 text-white'
+            : 'bg-navy-700 text-white'
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="font-display text-2xl font-semibold text-navy-700">Auto-Rejected</h2>
-          {usingFallback && (
-            <p className="text-sm text-amber-500 font-medium mt-0.5">(demo data)</p>
-          )}
+          <h2 className="font-display text-2xl font-semibold text-navy-700">Flagged</h2>
+          <p className="text-sm text-navy-400 mt-0.5">
+            {leads.length} lead{leads.length !== 1 ? 's' : ''} disqualified — review for overrides
+          </p>
         </div>
         <button onClick={refresh} className="btn-secondary-sm">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -49,20 +100,43 @@ export default function AutoRejected() {
 
       {leads.length === 0 ? (
         <div className="text-center py-20">
+          <svg className="w-16 h-16 text-navy-200 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           <p className="text-navy-400 text-lg font-medium">No auto-rejected leads</p>
           <p className="text-navy-300 text-sm mt-1">All incoming leads have passed the disqualification rules.</p>
         </div>
       ) : (
         <div className="space-y-4">
           {leads.map((lead) => (
-            <LeadCard
+            <DisqualifiedCard
               key={lead.leadId}
               lead={lead}
-              variant="rejected"
               onOverride={handleOverride}
+              onConfirmReject={(l) => setModal({ type: 'reject', lead: l })}
+              onRequestInfo={(l) => setModal({ type: 'info', lead: l })}
+              actionLoading={actionLoading}
             />
           ))}
         </div>
+      )}
+
+      {/* Modals */}
+      {modal.type === 'reject' && modal.lead && (
+        <ConfirmRejectModal
+          lead={modal.lead}
+          onConfirm={handleConfirmReject}
+          onClose={() => setModal({ type: null, lead: null })}
+          loading={actionLoading}
+        />
+      )}
+      {modal.type === 'info' && modal.lead && (
+        <RequestInfoModal
+          lead={modal.lead}
+          onConfirm={handleRequestInfo}
+          onClose={() => setModal({ type: null, lead: null })}
+          loading={actionLoading}
+        />
       )}
     </div>
   )

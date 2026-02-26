@@ -9,6 +9,17 @@ const N8N_BASE_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5
 // ── Reads: Airtable direct (with n8n fallback) ─────────────────────
 
 export async function fetchLeads(tab = 'pending') {
+  // Auto-rejected leads: try n8n endpoint first (has grace period data), fall back to Airtable
+  if (tab === 'auto_rejected') {
+    try {
+      return await n8nRequest('/api/leads/disqualified')
+    } catch {
+      if (isAirtableConfigured()) {
+        return fetchLeadsFromAirtable(tab)
+      }
+      throw new Error('Could not fetch disqualified leads')
+    }
+  }
   if (isAirtableConfigured()) {
     return fetchLeadsFromAirtable(tab)
   }
@@ -50,6 +61,13 @@ export async function requestInfo(leadId, followUpQuestion) {
   return n8nRequest('/api/leads/request-info', {
     method: 'POST',
     body: JSON.stringify({ leadId, followUpQuestion }),
+  })
+}
+
+export async function confirmRejectLead(leadId, rejectionReason, customNote) {
+  return n8nRequest('/api/leads/confirm-reject', {
+    method: 'POST',
+    body: JSON.stringify({ leadId, rejectionReason, customNote }),
   })
 }
 

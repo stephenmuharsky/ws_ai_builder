@@ -64,6 +64,11 @@
            bg-amber-50 text-amber-700 border border-amber-200 rounded-lg
            hover:bg-amber-100 transition-colors;
   }
+  .btn-confirm-reject {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+           bg-white text-red-600 border border-red-200 rounded-lg
+           hover:bg-red-50 transition-colors;
+  }
 
   .modal-overlay {
     @apply fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4;

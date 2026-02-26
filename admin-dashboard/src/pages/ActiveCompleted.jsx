@@ -44,7 +44,7 @@ export default function ActiveCompleted() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="font-display text-2xl font-semibold text-navy-700">In Progress</h2>
+          <h2 className="font-display text-2xl font-semibold text-navy-700">Active Pipeline</h2>
           <p className="text-sm text-navy-400 mt-0.5">
             {filtered.length} lead{filtered.length !== 1 ? 's' : ''}
             {usingFallback && (

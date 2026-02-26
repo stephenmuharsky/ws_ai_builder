@@ -59,7 +59,13 @@
         320
       ],
       "id": "af3685a0-1256-495c-b500-8d9a00ed8cbe",
-      "name": "Fetch Actionable Leads (Airtable)"
+      "name": "Fetch Actionable Leads (Airtable)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -216,7 +222,13 @@
         176
       ],
       "id": "99d63ea6-a1c5-4e2b-8ae7-98702d9b1d1c",
-      "name": "Find Lead (FU1)"
+      "name": "Find Lead (FU1)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -247,7 +259,13 @@
         176
       ],
       "id": "c6dd6bb0-07d3-465f-9729-e925d74c0bbd",
-      "name": "Update Lead (FU1)"
+      "name": "Update Lead (FU1)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -294,7 +312,13 @@
         336
       ],
       "id": "518fbeae-f8c6-485a-be60-a92b436a8361",
-      "name": "Find Lead (FU2)"
+      "name": "Find Lead (FU2)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -325,7 +349,13 @@
         336
       ],
       "id": "76f513b6-d236-40a1-8c8e-55cdc9ae7b36",
-      "name": "Update Lead (FU2)"
+      "name": "Update Lead (FU2)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -372,7 +402,13 @@
         496
       ],
       "id": "607b93fd-a2ec-4503-b950-60fefb07bf59",
-      "name": "Find Lead (Unresponsive)"
+      "name": "Find Lead (Unresponsive)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -402,7 +438,13 @@
         496
       ],
       "id": "6b8600d9-b624-46df-86f6-8d5b103e7a83",
-      "name": "Update Lead (Unresponsive)"
+      "name": "Update Lead (Unresponsive)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -473,7 +515,13 @@
         656
       ],
       "id": "e9f0a1b2-c3d4-5678-9012-abc345def678",
-      "name": "Find Lead (DQ)"
+      "name": "Find Lead (DQ)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -503,7 +551,13 @@
         656
       ],
       "id": "f0a1b2c3-d4e5-6789-0123-bcd456ef7890",
-      "name": "Update Lead (DQ Sent)"
+      "name": "Update Lead (DQ Sent)",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -737,7 +791,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "6718709a-9ebe-473b-99f5-ad923791e754",
+  "versionId": "528a9372-db5c-443a-a84f-9ad1a878a1ef",
   "meta": {
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
   },

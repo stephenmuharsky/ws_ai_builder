@@ -68,7 +68,7 @@ export default function PendingReview() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="font-display text-2xl font-semibold text-navy-700">New Leads</h2>
+          <h2 className="font-display text-2xl font-semibold text-navy-700">Pending Review</h2>
           <p className="text-sm text-navy-400 mt-0.5">
             {leads.length} lead{leads.length !== 1 ? 's' : ''} awaiting your decision
             {usingFallback && (
