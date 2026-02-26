@@ -3,8 +3,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# WF1: INTAKE FORM WEBHOOK & AUTO-DISQUALIFICATION\n\n**Endpoint:** POST /webhook/intake-form\n\n**Flow:**\n1. Receive form submission from React intake form\n2. Validate all fields (format, required, business hours)\n3. Generate Lead ID (LEAD-YYYYMMDD-XXXX)\n4. Run disqualification rules (deterministic — NO AI)\n5. Route: Disqualified → rejection email + log | Qualified → AI enrichment\n\n**Data Layer:** Airtable (Leads table) + Redis (lead state hash)\n**Disqualification is DETERMINISTIC — no AI involvement.**",
-        "height": 520,
+        "content": "# WF1: INTAKE FORM WEBHOOK & AUTO-DISQUALIFICATION\n\n**Endpoint:** POST /webhook/intake-form\n\n**Flow:**\n1. Receive form submission from React intake form\n2. Validate all fields (format, required, business hours)\n3. Generate Lead ID (LEAD-YYYYMMDD-XXXX)\n4. Run disqualification rules (deterministic — NO AI)\n5. Route: Disqualified → saved to Airtable + Redis (NO immediate email) | Qualified → AI enrichment\n\n**48-HOUR GRACE PERIOD:** Disqualified leads are NOT emailed immediately.\nWF7 checks hourly and sends rejection email after 48h if admin hasn't overridden.\nThis gives the advisor time to review edge cases (e.g. someone relocating to a served province).\n\n**Data Layer:** Airtable (Leads table) + Redis (lead state hash)\n**Disqualification is DETERMINISTIC — no AI involvement.**",
+        "height": 620,
         "width": 560,
         "color": 5
       },
@@ -84,10 +84,10 @@
       "parameters": {
         "conditions": {
           "options": {
-            "caseSensitive": true,
+            "version": 2,
             "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
+            "caseSensitive": true,
+            "typeValidation": "strict"
           },
           "conditions": [
             {
@@ -398,10 +398,10 @@
     },
     {
       "parameters": {
-        "content": "## DISQUALIFIED PATH",
+        "content": "## DISQUALIFIED PATH\n*48h grace period — no immediate email*\n*WF7 sends rejection after 48h if no admin override*",
         "height": 180,
-        "width": 360,
-        "color": 7
+        "width": 420,
+        "color": 2
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -508,63 +508,6 @@
     },
     {
       "parameters": {
-        "operation": "get",
-        "key": "firm:email_templates",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.redis",
-      "typeVersion": 1,
-      "position": [
-        2800,
-        544
-      ],
-      "id": "60b248f0-3908-4c61-a8be-d088039b7df9",
-      "name": "Get Email Templates",
-      "credentials": {
-        "redis": {
-          "id": "VgHjJLwct64e99fI",
-          "name": "Redis account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const lead = $('Prep Redis State (Disqualified)').first().json;\nlet templatesRaw = $('Get Email Templates').first().json;\nlet templates;\nif (typeof templatesRaw === 'string') templates = JSON.parse(templatesRaw);\nelse if (templatesRaw.data) templates = JSON.parse(templatesRaw.data);\nelse templates = templatesRaw;\nconst tpl = templates.disqualification || { subject: 'Thank you for your interest', body: 'Thank you for reaching out.' };\nconst firstName = lead.fullName.split(' ')[0];\nlet subject = tpl.subject.replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nlet body = tpl.body.replace(/\\{\\{first_name\\}\\}/g, firstName).replace(/\\{\\{firm_name\\}\\}/g, 'NorthStar Wealth Advisory');\nreturn [{ json: { to: lead.email, subject, body, leadId: lead.leadId } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3040,
-        544
-      ],
-      "id": "4434f3ce-39ac-4f07-ac64-cea260fe2ea9",
-      "name": "Build Rejection Email"
-    },
-    {
-      "parameters": {
-        "sendTo": "={{ $json.to }}",
-        "subject": "={{ $json.subject }}",
-        "message": "={{ $json.body }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [
-        3280,
-        544
-      ],
-      "id": "ed5725dc-0af7-42a3-bbb1-7ae17a6c4d38",
-      "name": "Send Rejection Email",
-      "webhookId": "25a8c74a-6252-42a3-ad8c-09ff163f139b",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "dnECY8GMehNvK0Ok",
-          "name": "Gmail account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ success: true, leadId: $('Prep Redis State (Disqualified)').first().json.leadId, message: 'Your submission has been received. We will be in touch within 1 business day.' }) }}",
         "options": {
@@ -574,7 +517,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        3536,
+        2800,
         544
       ],
       "id": "c4e82997-6b16-423e-9c16-1040325eec6e",
@@ -772,39 +715,6 @@
       "main": [
         [
           {
-            "node": "Get Email Templates",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Email Templates": {
-      "main": [
-        [
-          {
-            "node": "Build Rejection Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Rejection Email": {
-      "main": [
-        [
-          {
-            "node": "Send Rejection Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Rejection Email": {
-      "main": [
-        [
-          {
             "node": "Return 200 (Disqualified)",
             "type": "main",
             "index": 0
@@ -828,7 +738,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "47ce49e7-76ed-44d9-ba0f-6e05d9e81970",
+  "versionId": "0fdf2b8b-4ede-4f26-80ad-c1dbbd55d1f3",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

@@ -3,9 +3,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# WF7: FOLLOW-UP CADENCE\n\n**Trigger:** Schedule — every 1 hour\n\n**Logic:**\n- Scan Leads sheet for OUTREACH_IN_PROGRESS\n- 48hrs no reply → Follow-up #1\n- 96hrs no reply → Follow-up #2\n- 168hrs (7d) no reply → Mark UNRESPONSIVE\n\n**Max 2 follow-ups per lead.**",
-        "height": 260,
-        "width": 440,
+        "content": "# WF7: FOLLOW-UP CADENCE + DISQUALIFICATION GRACE PERIOD\n\n**Trigger:** Schedule — every 1 hour\n\n**Logic (OUTREACH_IN_PROGRESS):**\n- 48hrs no reply → Follow-up #1\n- 96hrs no reply → Follow-up #2\n- 168hrs (7d) no reply → Mark UNRESPONSIVE\n\n**Logic (DISQUALIFIED — 48h grace period):**\n- Auto-disqualified leads get 48h for admin review\n- If admin overrides → lead goes to PENDING_ENRICHMENT (no rejection email)\n- If 48h passes with no override → trigger WF8 rejection email\n\n**Max 2 follow-ups per outreach lead.**",
+        "height": 360,
+        "width": 480,
         "color": 4
       },
       "type": "n8n-nodes-base.stickyNote",
@@ -49,7 +49,7 @@
           "value": "tblEPuNDRprzezbK1",
           "mode": "id"
         },
-        "filterByFormula": "{status}='OUTREACH_IN_PROGRESS'",
+        "filterByFormula": "OR({status}='OUTREACH_IN_PROGRESS', AND({status}='DISQUALIFIED', {rejectionEmailSentAt}=''))",
         "options": {}
       },
       "type": "n8n-nodes-base.airtable",
@@ -59,11 +59,11 @@
         320
       ],
       "id": "af3685a0-1256-495c-b500-8d9a00ed8cbe",
-      "name": "Fetch OUTREACH_IN_PROGRESS Leads (Airtable)"
+      "name": "Fetch Actionable Leads (Airtable)"
     },
     {
       "parameters": {
-        "jsCode": "// Determine which leads need follow-up action\nconst leads = $input.all().map(i => i.json).filter(l => l.leadId && l.lastEmailSentAt);\nconst now = new Date();\nconst results = [];\n\nfor (const lead of leads) {\n  const lastEmail = new Date(lead.lastEmailSentAt);\n  const hoursElapsed = (now - lastEmail) / (1000 * 60 * 60);\n  const followUpCount = Number(lead.followUpCount) || 0;\n\n  let action = null;\n  if (hoursElapsed >= 168 && followUpCount >= 2) {\n    action = 'MARK_UNRESPONSIVE';\n  } else if (hoursElapsed >= 96 && followUpCount === 1) {\n    action = 'FOLLOWUP_2';\n  } else if (hoursElapsed >= 48 && followUpCount === 0) {\n    action = 'FOLLOWUP_1';\n  }\n\n  if (action) {\n    results.push({\n      leadId: lead.leadId,\n      email: lead.email,\n      fullName: lead.fullName,\n      firstName: (lead.fullName || '').split(' ')[0],\n      assignedAdvisorName: lead.assignedAdvisorName || 'our team',\n      followUpCount,\n      hoursElapsed: Math.round(hoursElapsed),\n      action\n    });\n  }\n}\n\nif (results.length === 0) {\n  return []; // Nothing to do\n}\n\nreturn results.map(r => ({ json: r }));"
+        "jsCode": "// Determine which leads need follow-up action\n// Handles both OUTREACH_IN_PROGRESS follow-ups AND DISQUALIFIED 48h grace period\nconst allLeads = $input.all().map(i => i.json);\nconst now = new Date();\nconst results = [];\n\n// === OUTREACH_IN_PROGRESS leads: follow-up cadence ===\nconst outreachLeads = allLeads.filter(l => l.status === 'OUTREACH_IN_PROGRESS' && l.leadId && l.lastEmailSentAt);\nfor (const lead of outreachLeads) {\n  const lastEmail = new Date(lead.lastEmailSentAt);\n  const hoursElapsed = (now - lastEmail) / (1000 * 60 * 60);\n  const followUpCount = Number(lead.followUpCount) || 0;\n\n  let action = null;\n  if (hoursElapsed >= 168 && followUpCount >= 2) {\n    action = 'MARK_UNRESPONSIVE';\n  } else if (hoursElapsed >= 96 && followUpCount === 1) {\n    action = 'FOLLOWUP_2';\n  } else if (hoursElapsed >= 48 && followUpCount === 0) {\n    action = 'FOLLOWUP_1';\n  }\n\n  if (action) {\n    results.push({\n      leadId: lead.leadId,\n      email: lead.email,\n      fullName: lead.fullName,\n      firstName: (lead.fullName || '').split(' ')[0],\n      assignedAdvisorName: lead.assignedAdvisorName || 'our team',\n      followUpCount,\n      hoursElapsed: Math.round(hoursElapsed),\n      action\n    });\n  }\n}\n\n// === DISQUALIFIED leads: 48h grace period expired, send rejection email ===\nconst disqualifiedLeads = allLeads.filter(l => l.status === 'DISQUALIFIED' && l.leadId && l.submittedAt && !l.rejectionEmailSentAt);\nfor (const lead of disqualifiedLeads) {\n  const submitted = new Date(lead.submittedAt);\n  const hoursElapsed = (now - submitted) / (1000 * 60 * 60);\n\n  if (hoursElapsed >= 48) {\n    const reasons = lead.disqualificationReason || '';\n    let rejectionReason = 'other';\n    if (reasons.includes('jurisdiction')) rejectionReason = 'not_a_fit';\n    else if (reasons.includes('below_minimum')) rejectionReason = 'below_threshold_on_review';\n    else if (reasons.includes('goal_mismatch')) rejectionReason = 'not_a_fit';\n\n    results.push({\n      leadId: lead.leadId,\n      email: lead.email,\n      fullName: lead.fullName,\n      firstName: (lead.fullName || '').split(' ')[0],\n      disqualificationReasons: reasons,\n      rejectionReason,\n      hoursElapsed: Math.round(hoursElapsed),\n      action: 'SEND_DISQUALIFICATION_EMAIL'\n    });\n  }\n}\n\nif (results.length === 0) {\n  return [];\n}\n\nreturn results.map(r => ({ json: r }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -119,6 +119,20 @@
                   }
                 ]
               }
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "SEND_DISQUALIFICATION_EMAIL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
             }
           ]
         },
@@ -131,12 +145,7 @@
         320
       ],
       "id": "3b4ba5c9-dabb-4ed4-8f5c-54d28f61af86",
-      "name": "Route Action",
-      "outputs": [
-        "Follow-Up 1",
-        "Follow-Up 2",
-        "Unresponsive"
-      ]
+      "name": "Route Action"
     },
     {
       "parameters": {
@@ -153,7 +162,13 @@
       ],
       "id": "c2aab74a-0564-4755-84ec-434ab3c7f7e5",
       "name": "Send Follow-Up #1",
-      "webhookId": "6a25ee05-985e-4aae-abb1-a3412d914102"
+      "webhookId": "6a25ee05-985e-4aae-abb1-a3412d914102",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
     },
     {
       "parameters": {
@@ -170,7 +185,13 @@
       ],
       "id": "d2d243fb-2f6a-4097-9cb3-3544dab865a5",
       "name": "Send Follow-Up #2",
-      "webhookId": "1c176d39-111c-4b16-a6cd-e135d58f523b"
+      "webhookId": "1c176d39-111c-4b16-a6cd-e135d58f523b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dnECY8GMehNvK0Ok",
+          "name": "Gmail account"
+        }
+      }
     },
     {
       "parameters": {
@@ -242,7 +263,13 @@
         176
       ],
       "id": "4438f527-f4f4-421d-a8c7-79b7ca4b0fbe",
-      "name": "Redis Update (FU1)"
+      "name": "Redis Update (FU1)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
     },
     {
       "parameters": {
@@ -314,7 +341,13 @@
         336
       ],
       "id": "3bb8deb3-6d8c-4eaf-8e44-b765733f7a94",
-      "name": "Redis Update (FU2)"
+      "name": "Redis Update (FU2)",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
     },
     {
       "parameters": {
@@ -385,7 +418,130 @@
         496
       ],
       "id": "7d93ee89-a555-4134-8a80-98d951558df6",
-      "name": "Redis Set UNRESPONSIVE"
+      "name": "Redis Set UNRESPONSIVE",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "F4ZRJbdHVKvYnh5v",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $json.leadId }}",
+            "rejectionReason": "={{ $json.rejectionReason }}",
+            "customNote": "Auto-disqualified; 48h grace period expired without admin override"
+          }
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1440,
+        656
+      ],
+      "id": "d8e1f2a3-b4c5-6789-0abc-def012345678",
+      "name": "Trigger WF8 - Rejection Email"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "=FIND(\"{{ $json.leadId }}\", {leadId})",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1712,
+        656
+      ],
+      "id": "e9f0a1b2-c3d4-5678-9012-abc345def678",
+      "name": "Find Lead (DQ)"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "rejectionEmailSentAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1952,
+        656
+      ],
+      "id": "f0a1b2c3-d4e5-6789-0123-bcd456ef7890",
+      "name": "Update Lead (DQ Sent)"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=leadstate_{{ $json.leadId }}",
+        "value": "={{ JSON.stringify({ rejectionEmailSentAt: $now.toISO() }) }}",
+        "keyType": "hash"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        656
+      ],
+      "id": "a1b2c3d4-e5f6-7890-1234-cde567f89012",
+      "name": "Redis Mark DQ Sent",
+      "credentials": {
+        "redis": {
+          "id": "VgHjJLwct64e99fI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## DISQUALIFICATION 48H GRACE PERIOD\n*Leads auto-rejected by WF1 get 48h for admin review*\n*After 48h with no override → WF8 sends rejection email*",
+        "height": 140,
+        "width": 480,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1392,
+        592
+      ],
+      "id": "b2c3d4e5-f6a7-8901-2345-def678a90123",
+      "name": "DQ Grace Period Note"
     }
   ],
   "pinData": {},
@@ -394,7 +550,18 @@
       "main": [
         [
           {
-            "node": "Fetch OUTREACH_IN_PROGRESS Leads (Airtable)",
+            "node": "Fetch Actionable Leads (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Actionable Leads (Airtable)": {
+      "main": [
+        [
+          {
+            "node": "Determine Follow-Up Actions",
             "type": "main",
             "index": 0
           }
@@ -434,6 +601,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Trigger WF8 - Rejection Email",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -442,28 +616,6 @@
         [
           {
             "node": "Find Lead (FU1)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Follow-Up #2": {
-      "main": [
-        [
-          {
-            "node": "Find Lead (FU2)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch OUTREACH_IN_PROGRESS Leads (Airtable)": {
-      "main": [
-        [
-          {
-            "node": "Determine Follow-Up Actions",
             "type": "main",
             "index": 0
           }
@@ -486,6 +638,17 @@
         [
           {
             "node": "Redis Update (FU1)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up #2": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (FU2)",
             "type": "main",
             "index": 0
           }
@@ -535,13 +698,46 @@
           }
         ]
       ]
+    },
+    "Trigger WF8 - Rejection Email": {
+      "main": [
+        [
+          {
+            "node": "Find Lead (DQ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead (DQ)": {
+      "main": [
+        [
+          {
+            "node": "Update Lead (DQ Sent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead (DQ Sent)": {
+      "main": [
+        [
+          {
+            "node": "Redis Mark DQ Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "6e1c2e52-fd26-493e-b83d-cd8a1bd62243",
+  "versionId": "6718709a-9ebe-473b-99f5-ad923791e754",
   "meta": {
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
   },
