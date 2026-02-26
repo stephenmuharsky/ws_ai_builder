@@ -61,8 +61,6 @@ The system drafts a personalized pre-meeting nurture email for the advisor to se
 - **Send via backend** — The email is sent through the n8n workflow (WF12) via Gmail, not through a mailto: link. This avoids browser URL length limits, maintains audit trails, and updates the lead's status in Airtable automatically
 - **Dismiss option** — If the advisor doesn't want to send a nurture email, they can dismiss it
 
-### Automated Rejection Emails
-When the admin rejects a lead, the system generates a personalized, professional rejection email (WF8) based on the specific rejection reason. This isn't a template — the AI crafts the message considering the client's situation while maintaining firm tone and compliance.
 
 ---
 
