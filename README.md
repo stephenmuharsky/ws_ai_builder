@@ -331,8 +331,6 @@ npm run dev                 # http://localhost:5174
 **Deterministic rejection emails.** Rejection emails use Code-node templates, not AI generation. Rejected prospects are potential future clients — a tone-deaf or hallucinated AI email is a
 permanent brand and compliance risk. The same deterministic principle that governs disqualification rules also governs rejection communication: when the stakes are high and the output space is bounded, use code, not AI.
 
-![Sample deterministic rejection email — professional, templated, with reapply prompt and warm closing](sample_consultation_rejection.png)
-
 ---
 
 *Built by Stephen Muharsky for the Wealthsimple AI Builder role.*
