@@ -44,29 +44,38 @@
     },
     {
       "parameters": {
-        "operation": "get",
-        "key": "=leadstate_{{ $json.leadId }}",
-        "keyType": "hash",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appRvAEh3HHEra8gz",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblEPuNDRprzezbK1",
+          "mode": "id"
+        },
+        "filterByFormula": "={leadId}='{{ $('Called from WF4').first().json.leadId }}'",
         "options": {}
       },
-      "type": "n8n-nodes-base.redis",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
       "position": [
         640,
         304
       ],
       "id": "a413ec51-d024-4ef6-b9f9-c268bf5c0c44",
-      "name": "Get Lead State",
+      "name": "Get Lead from Airtable",
       "credentials": {
-        "redis": {
-          "id": "VgHjJLwct64e99fI",
-          "name": "Redis account"
+        "airtableTokenApi": {
+          "id": "CP9rcRyd72mNUa9G",
+          "name": "Airtable Personal Access Token account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "const input = $('Called from WF4').first().json;\nconst lead = $('Get Lead State').first().json;\n\nconst firstName = (lead.fullName || '').split(' ')[0];\n\nreturn [{ json: {\n  chatInput: `Rejection reason: ${input.rejectionReason}\\nCustom note from admin: ${input.customNote || ''}\\nClient name: ${firstName}\\nFinancial goals: ${lead.financialGoals || ''}\\nAsset range: ${lead.investableAssets || ''}`,\n  leadId: input.leadId,\n  email: lead.email,\n  fullName: lead.fullName,\n  firstName,\n  rejectionReason: input.rejectionReason,\n  customNote: input.customNote || '',\n  financialGoals: lead.financialGoals || '',\n  investableAssets: lead.investableAssets || ''\n} }];"
+        "jsCode": "const input = $('Called from WF4').first().json;\nconst lead = $('Get Lead from Airtable').first().json;\n\nconst firstName = (lead.fullName || '').split(' ')[0];\n\nreturn [{ json: {\n  chatInput: `Rejection reason: ${input.rejectionReason}\\nCustom note from admin: ${input.customNote || ''}\\nClient name: ${firstName}\\nFinancial goals: ${lead.financialGoals || ''}\\nAsset range: ${lead.investableAssets || ''}`,\n  leadId: input.leadId,\n  email: lead.email,\n  fullName: lead.fullName,\n  firstName,\n  rejectionReason: input.rejectionReason,\n  customNote: input.customNote || '',\n  financialGoals: lead.financialGoals || '',\n  investableAssets: lead.investableAssets || ''\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -82,7 +91,9 @@
         "sendTo": "={{ $json.to }}",
         "subject": "={{ $json.subject }}",
         "message": "={{ $json.body }}",
-        "options": {}
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
       },
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
@@ -103,7 +114,7 @@
     {
       "parameters": {
         "operation": "set",
-        "key": "=leadstate_{{ $('Build Email').first().json.leadId }}",
+        "key": "=leadstate_{{ $('Build Rejection Email (Deterministic)').first().json.leadId }}",
         "value": "={{ JSON.stringify({ rejectionEmailSentAt: $now.toISO() }) }}",
         "keyType": "hash"
       },
@@ -135,7 +146,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Fallback: send generic rejection template on AI failure\nconst context = $('Prep Rejection Context').first().json;\nreturn [{ json: {\n  to: context.email,\n  subject: 'Thank you for your interest — NorthStar Wealth Advisory',\n  body: `Hi ${context.firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory. We appreciate you sharing your financial goals with us.\\n\\nAt this time, we believe you may be better served by resources that more closely align with your current needs. Here are some excellent options:\\n\\n- Wealthsimple Invest (wealthsimple.com)\\n- Financial Planning Standards Council (fpsc.ca)\\n\\nShould your circumstances change, we'd love to hear from you again.\\n\\nWarm regards,\\nNorthStar Wealth Advisory`,\n  leadId: context.leadId\n} }];"
+        "jsCode": "// Fallback: send generic styled rejection template on error\nconst context = $('Prep Rejection Context').first().json;\nconst firstName = context.firstName || 'there';\nconst body = `<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;\">\n<div style=\"background: #0a2540; padding: 32px 40px; border-radius: 12px 12px 0 0;\">\n  <h1 style=\"color: #ffffff; font-size: 22px; font-weight: 600; margin: 0;\">Thank You for Reaching Out</h1>\n</div>\n<div style=\"background: #ffffff; padding: 32px 40px; border: 1px solid #e8e8e8; border-top: none;\">\n  <p style=\"font-size: 16px; line-height: 1.6; margin-top: 0;\">Dear ${firstName},</p>\n  <p style=\"font-size: 16px; line-height: 1.6;\">Thank you for reaching out to NorthStar Wealth Advisory. We appreciate your interest in our services.</p>\n  <p style=\"font-size: 16px; line-height: 1.6;\">After reviewing your application, we've decided not to move forward with a consultation at this time. We want to ensure you receive the best possible guidance for your needs, and have a few resources that may be helpful:</p>\n  <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 24px 0;\">\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <thead><tr style=\"background: #f8f9fb;\"><th style=\"padding: 10px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;\">Recommended Resources</th></tr></thead>\n      <tbody>\n        <tr><td style=\"padding: 14px 16px; border-bottom: 1px solid #f0f0f0;\"><a href=\"https://fpcanada.ca\" style=\"color: #0a2540; font-size: 15px; font-weight: 600; text-decoration: none;\">Financial Planning Standards Council</a><br><span style=\"font-size: 13px; color: #6b7280;\">fpcanada.ca</span></td></tr>\n        <tr><td style=\"padding: 14px 16px; border-bottom: 1px solid #f0f0f0;\"><a href=\"https://wealthsimple.com/learn\" style=\"color: #0a2540; font-size: 15px; font-weight: 600; text-decoration: none;\">Wealthsimple Learn</a><br><span style=\"font-size: 13px; color: #6b7280;\">wealthsimple.com/learn</span></td></tr>\n        <tr><td style=\"padding: 14px 16px;\"><a href=\"https://canada.ca/en/financial-consumer-agency.html\" style=\"color: #0a2540; font-size: 15px; font-weight: 600; text-decoration: none;\">Financial Consumer Agency of Canada</a><br><span style=\"font-size: 13px; color: #6b7280;\">canada.ca/en/financial-consumer-agency.html</span></td></tr>\n      </tbody>\n    </table>\n  </div>\n  <div style=\"background: #f8f9fb; border-left: 4px solid #0a2540; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 24px 0;\">\n    <p style=\"margin: 0; font-size: 14px; color: #374151; line-height: 1.6;\">Should your circumstances change in the future, we would welcome hearing from you again.</p>\n  </div>\n  <p style=\"font-size: 16px; line-height: 1.6;\">We wish you all the best on your financial journey.</p>\n  <p style=\"font-size: 15px; line-height: 1.6; margin-bottom: 0;\">Warm regards,<br><strong>NorthStar Wealth Advisory Team</strong></p>\n</div>\n<div style=\"padding: 20px 40px; text-align: center; font-size: 12px; color: #9ca3af;\">NorthStar Wealth Advisory \\u00b7 Toronto, ON<br>This email was sent regarding your recent application.</div>\n</div>`;\nreturn [{ json: {\n  to: context.email,\n  subject: 'Thank you for your interest \\u2014 NorthStar Wealth Advisory',\n  body,\n  leadId: context.leadId\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -151,7 +162,9 @@
         "sendTo": "={{ $json.to }}",
         "subject": "={{ $json.subject }}",
         "message": "={{ $json.body }}",
-        "options": {}
+        "options": {
+          "senderName": "NorthStar Wealth Advisory"
+        }
       },
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
@@ -171,7 +184,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// DETERMINISTIC REJECTION EMAIL BUILDER\n// No AI — templates are hardcoded per rejection reason with variable substitution.\n// This is a client-facing email about a high-stakes decision. AI must not compose it.\n\nconst ctx = $input.first().json;\nconst firstName = ctx.firstName || 'there';\nconst goals = ctx.financialGoals || '';\nconst assets = ctx.investableAssets || '';\nconst customNote = ctx.customNote || '';\nconst reason = ctx.rejectionReason || 'other';\n\n// Parse goals for resource targeting\nconst goalList = goals.toLowerCase();\nconst hasRetirement = goalList.includes('retirement');\nconst hasTax = goalList.includes('tax');\nconst hasDebt = goalList.includes('debt');\nconst hasEducation = goalList.includes('education');\nconst hasEstate = goalList.includes('estate');\n\n// Build targeted resources based on goals\nfunction getResources() {\n  const resources = [];\n  if (hasRetirement) resources.push('• Canada.ca Retirement Planning Hub — canada.ca/retirement');\n  if (hasTax) resources.push('• CRA Tax Planning Resources — canada.ca/taxes');\n  if (hasDebt) resources.push('• Credit Counselling Canada — creditcounsellingcanada.ca');\n  if (hasEducation) resources.push('• RESP Information (Canada.ca) — canada.ca/resp');\n  if (hasEstate) resources.push('• Estate Planning Council of Canada — epcc.ca');\n  // Always include general resources\n  resources.push('• Financial Planning Standards Council — fpcanada.ca');\n  if (resources.length < 3) resources.push('• Wealthsimple Learn — wealthsimple.com/learn');\n  return resources.slice(0, 3).join('\\n');\n}\n\nlet body = '';\n\nswitch (reason) {\n  case 'below_threshold_on_review':\n    body = `Hi ${firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory. We appreciate you taking the time to share your financial goals with us.\\n\\nAfter reviewing your application, we believe you may be better served at this stage by resources that are specifically designed for your current financial position. Here are some excellent options we recommend:\\n\\n${getResources()}\\n\\nThese are genuinely helpful starting points, and we encourage you to explore them.\\n\\nAs your financial situation evolves, we would welcome the opportunity to work with you in the future. Please don't hesitate to reach out again when you're ready.\\n\\nWarm regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n\n  case 'not_a_fit':\n    body = `Hi ${firstName},\\n\\nThank you for your interest in NorthStar Wealth Advisory. We appreciate you sharing your financial goals with us.\\n\\nAfter careful consideration, we want to make sure you receive the best possible guidance for your specific needs. Based on your goals, we believe the following resources may be a better fit at this time:\\n\\n${getResources()}\\n\\nWe want to ensure you get the right support, and these organizations specialize in areas that align closely with what you're looking for.\\n\\nWe wish you all the best on your financial journey, and our door is always open should your needs change in the future.\\n\\nBest regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n\n  case 'incomplete_info':\n    body = `Hi ${firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory.\\n\\nWe reviewed your application but unfortunately weren't able to move forward with the information provided. We'd love to learn more about your situation so we can properly assess how we might help.\\n\\nIf you're still interested, you're welcome to submit a new application with additional details about your financial goals and current situation. We're here to help and want to make sure we can provide the best possible guidance.\\n\\nYou can reapply at any time through our website.\\n\\nBest regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n\n  default: // 'other' and any unrecognized reason\n    body = `Hi ${firstName},\\n\\nThank you for reaching out to NorthStar Wealth Advisory. We truly appreciate your interest in our services.\\n\\nAfter reviewing your application, we're unable to move forward at this time. We understand this may be disappointing, and we want you to know that this doesn't reflect on your financial goals or potential.\\n\\nHere are some resources that may be helpful as you continue your financial planning journey:\\n\\n• Financial Planning Standards Council — fpcanada.ca\\n• Wealthsimple Learn — wealthsimple.com/learn\\n• Canada.ca Financial Planning — canada.ca/financial-planning\\n\\nShould your circumstances change in the future, we would be happy to hear from you again.\\n\\nWarm regards,\\nNorthStar Wealth Advisory Team`;\n    break;\n}\n\n// Subject line map (deterministic)\nconst subjectMap = {\n  'below_threshold_on_review': 'Resources to help you on your financial journey',\n  'not_a_fit': 'Some recommendations for your financial goals',\n  'incomplete_info': \"We'd love to learn more\",\n  'other': 'Thank you for your interest'\n};\n\nconst subject = (subjectMap[reason] || subjectMap['other']) + ' — NorthStar Wealth Advisory';\n\nreturn [{ json: {\n  to: ctx.email,\n  subject,\n  body,\n  leadId: ctx.leadId\n} }];"
+        "jsCode": "// DETERMINISTIC REJECTION EMAIL BUILDER — HTML styled to match WF5 acceptance emails\nconst ctx = $input.first().json;\nconst firstName = ctx.firstName || 'there';\nconst goals = ctx.financialGoals || '';\nconst customNote = ctx.customNote || '';\nconst reason = ctx.rejectionReason || 'other';\n\nconst goalList = goals.toLowerCase();\nconst hasRetirement = goalList.includes('retirement');\nconst hasTax = goalList.includes('tax');\nconst hasDebt = goalList.includes('debt');\nconst hasEducation = goalList.includes('education');\nconst hasEstate = goalList.includes('estate');\n\nfunction getResources() {\n  const resources = [];\n  if (hasRetirement) resources.push({ label: 'Canada.ca Retirement Planning Hub', url: 'https://canada.ca/en/services/benefits/publicpensions.html' });\n  if (hasTax) resources.push({ label: 'CRA Tax Planning Resources', url: 'https://canada.ca/en/revenue-agency.html' });\n  if (hasDebt) resources.push({ label: 'Credit Counselling Canada', url: 'https://creditcounsellingcanada.ca' });\n  if (hasEducation) resources.push({ label: 'RESP Information (Canada.ca)', url: 'https://canada.ca/en/employment-social-development/programs/education-savings.html' });\n  if (hasEstate) resources.push({ label: 'Estate Planning Council of Canada', url: 'https://epcc.ca' });\n  resources.push({ label: 'Financial Planning Standards Council', url: 'https://fpcanada.ca' });\n  if (resources.length < 3) resources.push({ label: 'Wealthsimple Learn', url: 'https://wealthsimple.com/learn' });\n  return resources.slice(0, 3);\n}\n\nconst resources = getResources();\nconst resourceRows = resources.map(r =>\n  `<tr><td style=\"padding: 14px 16px; border-bottom: 1px solid #f0f0f0;\"><a href=\"${r.url}\" style=\"color: #0a2540; font-size: 15px; font-weight: 600; text-decoration: none;\">${r.label}</a><br><span style=\"font-size: 13px; color: #6b7280;\">${r.url}</span></td></tr>`\n).join('');\n\nconst subjectMap = {\n  'below_threshold_on_review': 'Resources to help you on your financial journey',\n  'not_a_fit': 'Some recommendations for your financial goals',\n  'incomplete_info': \"We'd love to learn more\",\n  'other': 'Thank you for your interest'\n};\nconst subject = (subjectMap[reason] || subjectMap['other']) + ' — NorthStar Wealth Advisory';\n\nconst introMap = {\n  'below_threshold_on_review': `After reviewing your application, we've determined that we won't be able to proceed with a consultation at this time. That said, we believe you may be well served by resources specifically designed for your current financial position, and we've put together some excellent options we genuinely recommend:`,\n  'not_a_fit': `After careful consideration, we've decided not to move forward with a consultation at this time. We want to make sure you receive the best possible guidance for your specific needs, and based on your goals, we believe the following resources may be a stronger fit:`,\n  'incomplete_info': `We reviewed your application but unfortunately won't be able to move forward with a consultation based on the information provided. We'd love to learn more about your situation — you're welcome to reapply at any time with additional details about your financial goals.`,\n  'other': `After reviewing your application, we're unable to proceed with a consultation at this time. We want to make sure you have access to the right resources as you continue your financial planning journey:`\n};\nconst intro = introMap[reason] || introMap['other'];\n\nconst showReapplyCTA = reason === 'incomplete_info';\nconst reapplyBlock = showReapplyCTA ? `\n<div style=\"background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px 20px; border-radius: 8px; margin: 24px 0;\">\n  <p style=\"margin: 0; font-size: 14px; color: #1e40af;\"><strong>Ready to reapply?</strong> Simply visit our website and submit a new intake form — we're happy to review your application again with any additional context you can share.</p>\n</div>` : '';\n\nconst body = `<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;\">\n<div style=\"background: #0a2540; padding: 32px 40px; border-radius: 12px 12px 0 0;\">\n  <h1 style=\"color: #ffffff; font-size: 22px; font-weight: 600; margin: 0;\">Thank You for Reaching Out</h1>\n</div>\n<div style=\"background: #ffffff; padding: 32px 40px; border: 1px solid #e8e8e8; border-top: none;\">\n  <p style=\"font-size: 16px; line-height: 1.6; margin-top: 0;\">Dear ${firstName},</p>\n  <p style=\"font-size: 16px; line-height: 1.6;\">Thank you for your interest in NorthStar Wealth Advisory. We appreciate you taking the time to share your financial goals with us.</p>\n  <p style=\"font-size: 16px; line-height: 1.6;\">${intro}</p>\n\n  ${!showReapplyCTA ? `\n  <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 24px 0;\">\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <thead><tr style=\"background: #f8f9fb;\"><th style=\"padding: 10px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;\">Recommended Resources</th></tr></thead>\n      <tbody>${resourceRows}</tbody>\n    </table>\n  </div>` : ''}\n\n  ${reapplyBlock}\n\n  <div style=\"background: #f8f9fb; border-left: 4px solid #0a2540; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 24px 0;\">\n    <p style=\"margin: 0; font-size: 14px; color: #374151; line-height: 1.6;\">Should your circumstances change in the future, we would welcome hearing from you again. Our door is always open.</p>\n  </div>\n\n  <p style=\"font-size: 16px; line-height: 1.6;\">We wish you all the best on your financial journey.</p>\n  <p style=\"font-size: 15px; line-height: 1.6; margin-bottom: 0;\">Warm regards,<br><strong>NorthStar Wealth Advisory Team</strong></p>\n</div>\n<div style=\"padding: 20px 40px; text-align: center; font-size: 12px; color: #9ca3af;\">NorthStar Wealth Advisory · Toronto, ON<br>This email was sent regarding your recent application.</div>\n</div>`;\n\nreturn [{ json: {\n  to: ctx.email,\n  subject,\n  body,\n  leadId: ctx.leadId\n} }];"
       },
       "id": "deterministic-rejection-email",
       "name": "Build Rejection Email (Deterministic)",
@@ -189,14 +202,14 @@
       "main": [
         [
           {
-            "node": "Get Lead State",
+            "node": "Get Lead from Airtable",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Get Lead State": {
+    "Get Lead from Airtable": {
       "main": [
         [
           {
@@ -267,7 +280,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "c1890e81-6b22-42ae-98c5-e8749efef67c",
+  "versionId": "05b5df1a-6f21-4419-8ffb-1d08de87952f",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"

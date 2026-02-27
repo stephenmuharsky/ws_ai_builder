@@ -19,6 +19,8 @@ Disqualified leads aren't silently discarded. They appear in a dedicated **Flagg
 
 This matters because rules are blunt instruments. A client who selected "Saskatchewan" but wrote "relocating to Ontario next month" in their free text would be auto-disqualified by jurisdiction rules — but any human reading the full context would override that. The Flagged view ensures the advisor always gets that chance before a rejection email goes out.
 
+![Flagged lead detail card showing disqualification reason, applicant context, and override actions](sample_flagged_application.png)
+
 ### RAG-Powered Lead Enrichment
 Leads that pass disqualification enter the AI enrichment pipeline (Gemini 2.5 Flash). This is where the system's intelligence lives:
 
@@ -39,6 +41,8 @@ When the admin approves a lead and selects an advisor, the system cross-checks a
 - **Inbound email processing** (WF6) uses AI to parse client responses — detecting intent (accept a slot, request different time, ask a question, cancel) and acting accordingly without human intervention.
 - **Follow-up cadence** runs automatically: reminders at 48 hours and 96 hours, then marks the lead as unresponsive after 7 days.
 
+![Consultation confirmed email with meeting details and document preparation checklist](sample_consultation_acceptance.png)
+
 ### AI-Generated Consultation Prep Brief
 Once a meeting is booked, the system generates a comprehensive prep brief for the advisor containing:
 
@@ -53,6 +57,10 @@ Once a meeting is booked, the system generates a comprehensive prep brief for th
 
 This brief is displayed in the dashboard as a rich, collapsible interface — not a wall of text.
 
+![Consultation prep brief — executive summary, financial snapshot, and goal-by-goal analysis](sample_financialprofile_1.png)
+
+![Consultation prep brief — client psychology notes, 60-minute meeting agenda, documents to request, and red flags](sample_financialprofile_2.png)
+
 ### Pre-Meeting Nurture Email with Guardrails
 The system drafts a personalized pre-meeting nurture email for the advisor to send to the client before their consultation. Key design choices:
 
@@ -61,6 +69,7 @@ The system drafts a personalized pre-meeting nurture email for the advisor to se
 - **Send via backend** — The email is sent through the n8n workflow (WF12) via Gmail, not through a mailto: link. This avoids browser URL length limits, maintains audit trails, and updates the lead's status in Airtable automatically
 - **Dismiss option** — If the advisor doesn't want to send a nurture email, they can dismiss it
 
+![Competitive intelligence section and editable pre-meeting nurture email with send/dismiss actions](sample_financialprofile_3.png)
 
 ---
 
@@ -218,6 +227,8 @@ Form Submitted
 | System Log | 4 | Audit trail |
 | Error Log | 5 | Workflow error tracking |
 
+![Airtable Advisor Info table showing advisor profiles, specializations, and caseload capacity](advisor_info.png)
+
 ---
 
 ## Running Locally
@@ -269,8 +280,10 @@ npm run dev                 # http://localhost:5174
 
 **Automated conflict resolution.** When a preferred time slot isn't available, the system doesn't just flag it — it automatically initiates email outreach with alternative options, processes the client's reply with AI intent parsing, and books the meeting once agreement is reached.
 
-**Deterministic rejection emails.** Rejection emails use Code-node templates, not AI generation. Rejected prospects are potential future clients — a tone-deaf or hallucinated AI email is a 
+**Deterministic rejection emails.** Rejection emails use Code-node templates, not AI generation. Rejected prospects are potential future clients — a tone-deaf or hallucinated AI email is a
 permanent brand and compliance risk. The same deterministic principle that governs disqualification rules also governs rejection communication: when the stakes are high and the output space is bounded, use code, not AI.
+
+![Sample deterministic rejection email — professional, templated, with reapply prompt and warm closing](sample_consultation_rejection.png)
 
 ---
 

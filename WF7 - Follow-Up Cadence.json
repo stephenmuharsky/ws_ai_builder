@@ -49,7 +49,7 @@
           "value": "tblEPuNDRprzezbK1",
           "mode": "id"
         },
-        "filterByFormula": "OR({status}='OUTREACH_IN_PROGRESS', AND({status}='DISQUALIFIED', {rejectionEmailSentAt}=''))",
+        "filterByFormula": "OR({status}='OUTREACH_IN_PROGRESS', AND({status}='DISQUALIFIED', {rejectedAt}=''))",
         "options": {}
       },
       "type": "n8n-nodes-base.airtable",
@@ -212,7 +212,7 @@
           "value": "tblEPuNDRprzezbK1",
           "mode": "id"
         },
-        "filterByFormula": "=FIND(\"{{ $json.leadId }}\", {leadId})",
+        "filterByFormula": "=FIND(\"{{ $('Route Action').item.json.leadId }}\", {leadId})",
         "options": {}
       },
       "type": "n8n-nodes-base.airtable",
@@ -246,9 +246,13 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
+            "id": "={{ $json.id }}",
             "followUpCount": 1,
             "lastEmailSentAt": "={{ $now.toISO() }}"
-          }
+          },
+          "matchingColumns": [
+            "id"
+          ]
         },
         "options": {}
       },
@@ -302,7 +306,7 @@
           "value": "tblEPuNDRprzezbK1",
           "mode": "id"
         },
-        "filterByFormula": "=FIND(\"{{ $json.leadId }}\", {leadId})",
+        "filterByFormula": "=FIND(\"{{ $('Route Action').item.json.leadId }}\", {leadId})",
         "options": {}
       },
       "type": "n8n-nodes-base.airtable",
@@ -336,9 +340,13 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
+            "id": "={{ $json.id }}",
             "followUpCount": 2,
             "lastEmailSentAt": "={{ $now.toISO() }}"
-          }
+          },
+          "matchingColumns": [
+            "id"
+          ]
         },
         "options": {}
       },
@@ -426,8 +434,12 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
+            "id": "={{ $json.id }}",
             "status": "UNRESPONSIVE"
-          }
+          },
+          "matchingColumns": [
+            "id"
+          ]
         },
         "options": {}
       },
@@ -539,8 +551,12 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
+            "id": "={{ $json.id }}",
             "rejectionEmailSentAt": "={{ $now.toISO() }}"
-          }
+          },
+          "matchingColumns": [
+            "id"
+          ]
         },
         "options": {}
       },
@@ -596,6 +612,17 @@
       ],
       "id": "b2c3d4e5-f6a7-8901-2345-def678a90123",
       "name": "DQ Grace Period Note"
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger-wf7",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        432,
+        528
+      ]
     }
   ],
   "pinData": {},
@@ -785,13 +812,24 @@
           }
         ]
       ]
+    },
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Actionable Leads (Airtable)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "528a9372-db5c-443a-a84f-9ad1a878a1ef",
+  "versionId": "4e16c6cb-0195-4caf-b3e5-aefed0e38c94",
   "meta": {
     "instanceId": "168c7d7211133de6d8ec393ae7a3e3a882a0d6cfc6397ea1db2fe66f28042b4e"
   },
