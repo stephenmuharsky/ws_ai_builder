@@ -1,6 +1,54 @@
 # NorthStar Wealth Advisory — AI-Powered Lead Pipeline
 
-An end-to-end AI-powered lead qualification, enrichment, and advisor matching pipeline for a financial advisory firm. The core human decision is accept or reject the client — a regulatory and relationship judgment call that must stay with the advisor. But the system goes well beyond simple routing: AI enhances human decision-making at every stage through RAG-powered lead enrichment, intelligent advisor matching, automated scheduling conflict resolution, AI-generated consultation prep briefs, and guardrail-checked pre-meeting touchpoint emails that the advisor can review and edit before sending.
+An end-to-end AI-powered lead qualification, enrichment, and advisor matching pipeline for a financial advisory firm. Built for the Wealthsimple AI Builder application.
+
+---
+
+## Demo Video
+
+https://smuharsky.wistia.com/medias/y48jm2ptpk
+
+*Apologies — the demo runs longer than the requested 2–3 minutes. I'd recommend watching at 1.25x playback speed.*
+
+---
+
+## Written Explanation
+
+**What the human can now do that they couldn't before:**
+
+An advisor can now qualify, prepare for, and book a client consultation in under three minutes — a process that used to take thirty to forty. They review an AI-generated profile summary grounded in the firm's compliance policy manual, scan risk flags and advisor match rankings, and approve or reject with confidence.
+
+But the bigger shift isn't speed — it's depth. Advisors walk in with a full prep brief: financial snapshot, goal-by-goal analysis with Canadian-specific context like RRSP room and TFSA limits, client psychology notes, a time-blocked meeting agenda, and red flags to watch for. They can have a better first meeting with a client they've never spoken to than most advisors have after three. One person can now handle ten times the volume without sacrificing the quality of attention each client gets.
+
+**What AI is responsible for:**
+
+AI handles the cognitive grunt work: lead enrichment, consultation prep brief generation, and pre-meeting nurture email drafting. All enrichment is RAG-powered — the AI queries embedded firm policy documents so outputs reflect actual firm policies, not generic financial advice. A separate compliance guardrails agent reviews every drafted email against those same policies before it reaches the advisor.
+
+**Where AI must stop:**
+
+The system uses three layers of decision-making:
+
+Deterministic code answers the binary questions — does this applicant meet the asset minimum, can we service their tax jurisdiction — because if-statements don't hallucinate and are predictable.
+
+The advisor then uses their professional judgment, enhanced by AI-generated intelligence, to make the final call — a decision that carries fiduciary weight and requires an audit trail that AI can't provide. Maybe the AI overlooked something. Maybe there's a human factor that changes everything.
+
+AI handles the creative, analytical work: synthesizing client profiles, generating conversation starters, drafting personalized emails. But no AI-generated message is auto-sent. When you're dealing with hundreds of thousands or millions of dollars, you can't leave client communications to chance. The advisor reviews, edits if needed, and sends.
+
+**What would break first at scale:**
+
+The system would certainly need to be adapted for a production launch. Currently, every lead triggers a RAG query against the firm's policy documents plus structured output generation from Gemini — that's the most compute-intensive step in the system, and it processes sequentially today. At tens of concurrent submissions, latency climbs. At hundreds, you'd need a proper job queue, parallel workers, and dedicated inference endpoints rather than shared API quotas. The architectural answer is batching and prioritization: triage leads by likely fit before spending the compute on full enrichment, so you're not burning inference cycles on leads that deterministic rules would have caught. Frankly, the optimization at scale is often less AI and more code — the same principle that drives the rest of the system.
+
+---
+
+## Salary Expectation & AI Experience
+
+**Salary expectation:** $140,000
+
+**Hands-on AI experience:** 1 year building comprehensive, end-to-end agentic workflows featuring multi-agent AI orchestration across deeply branched, complex conversational flows.
+
+---
+
+# System Documentation
 
 ---
 
